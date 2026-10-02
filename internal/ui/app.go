@@ -618,16 +618,26 @@ func (a *App) View() string {
 		content = baseView + "\n" + overlay
 	}
 
-	header := renderHeader("Vault", a.getCurrentBreadcrumb(), a.width, a.locked)
+	header := renderHeader(a.getCurrentBreadcrumb(), a.width, a.locked)
 	footer := renderFooter(a.getFooterHints(), a.statusMsg, a.width)
 
-	h := a.height - lipgloss.Height(header) - lipgloss.Height(footer)
-	if h < 0 {
-		h = 0
-	}
-	panel := renderGlassPanel(content, a.width, h)
+	headerHeight := lipgloss.Height(header)
+	footerHeight := lipgloss.Height(footer)
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, panel, footer)
+	availHeight := a.height - headerHeight - footerHeight
+	if availHeight < 3 {
+		availHeight = 3
+	}
+
+	panel := renderGlassPanel(content, a.width, availHeight)
+	rendered := lipgloss.JoinVertical(lipgloss.Left, header, panel, footer)
+
+	// Strict line clamp to prevent terminal scrolling and duplicate footers
+	lines := strings.Split(rendered, "\n")
+	if a.height > 0 && len(lines) > a.height {
+		lines = lines[:a.height]
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (a *App) pushScreen(s Screen) {
@@ -684,12 +694,12 @@ func (a *App) buildSearchIndex() {
 }
 
 func (a *App) getCurrentBreadcrumb() string {
-	bc := "Library"
+	bc := "Books (D:\\books)"
 	if a.currentBook != nil {
 		bc += " › " + a.currentBook.DisplayName
 	}
 	if a.currentChapter != nil {
-		bc += " › " + a.currentChapter.Title
+		bc += " › " + a.currentChapter.Title + " (.vault)"
 	}
 	if a.currentNote != nil {
 		bc += " › " + a.currentNote.Title
@@ -701,83 +711,69 @@ func (a *App) getFooterHints() []KeyHint {
 	switch a.screen {
 	case ScreenLibrary:
 		return []KeyHint{
-			{Key: "j/k", Description: "move"},
-			{Key: "Enter", Description: "open"},
-			{Key: "n", Description: "new book"},
-			{Key: "r", Description: "rename"},
-			{Key: "d", Description: "delete"},
-			{Key: "s", Description: "sort"},
-			{Key: "/", Description: "search"},
-			{Key: "t", Description: "tags"},
-			{Key: "x", Description: "export"},
-			{Key: "R", Description: "resurface"},
-			{Key: "Ctrl+L", Description: "lock"},
-			{Key: "?", Description: "help"},
-			{Key: "q", Description: "quit"},
+			{Key: "↑/↓", Description: "Select Book"},
+			{Key: "Enter", Description: "Open"},
+			{Key: "N", Description: "New Book"},
+			{Key: "D", Description: "Delete"},
+			{Key: "S", Description: "Sort"},
+			{Key: "/", Description: "Search"},
+			{Key: "?", Description: "Help"},
+			{Key: "Q", Description: "Quit"},
 		}
 	case ScreenBook:
 		return []KeyHint{
-			{Key: "j/k", Description: "move"},
-			{Key: "Enter", Description: "open chapter"},
-			{Key: "n", Description: "new chapter"},
-			{Key: "r", Description: "rename"},
-			{Key: "d", Description: "delete"},
-			{Key: "s", Description: "sort"},
-			{Key: "x", Description: "export"},
-			{Key: "Esc", Description: "back"},
+			{Key: "↑/↓", Description: "Select Vault"},
+			{Key: "Enter", Description: "Open Vault"},
+			{Key: "N", Description: "New Vault"},
+			{Key: "D", Description: "Delete"},
+			{Key: "Esc", Description: "Back to Books"},
 		}
 	case ScreenChapter:
 		return []KeyHint{
-			{Key: "j/k", Description: "move"},
-			{Key: "Enter", Description: "view"},
-			{Key: "e", Description: "edit"},
-			{Key: "n", Description: "new note"},
-			{Key: "p", Description: "pin"},
-			{Key: "r", Description: "rename"},
-			{Key: "d", Description: "delete"},
-			{Key: "s", Description: "sort"},
-			{Key: "x", Description: "export"},
-			{Key: "Esc", Description: "back"},
+			{Key: "↑/↓", Description: "Select Note"},
+			{Key: "Enter", Description: "View Note"},
+			{Key: "E", Description: "Edit"},
+			{Key: "N", Description: "New Note"},
+			{Key: "P", Description: "Pin"},
+			{Key: "Esc", Description: "Back to Vaults"},
 		}
 	case ScreenNoteView:
 		return []KeyHint{
-			{Key: "e", Description: "edit"},
-			{Key: "Ctrl+G", Description: "AI refine"},
-			{Key: "Tab", Description: "links"},
-			{Key: "Enter", Description: "follow link"},
-			{Key: "p", Description: "pin"},
-			{Key: "x", Description: "export"},
-			{Key: "Esc", Description: "back"},
+			{Key: "E", Description: "Edit Note"},
+			{Key: "Ctrl+G", Description: "AI Refine"},
+			{Key: "Tab", Description: "Cycle Links"},
+			{Key: "P", Description: "Pin"},
+			{Key: "Esc", Description: "Back"},
 		}
 	case ScreenNoteEdit:
 		return []KeyHint{
-			{Key: "Ctrl+R", Description: "preview"},
-			{Key: "Ctrl+F", Description: "format"},
-			{Key: "Ctrl+G", Description: "AI refine"},
-			{Key: "Ctrl+S", Description: "snapshot"},
-			{Key: "Esc", Description: "save & exit"},
+			{Key: "Ctrl+R", Description: "Preview"},
+			{Key: "Ctrl+F", Description: "Format"},
+			{Key: "Ctrl+G", Description: "AI Refine"},
+			{Key: "Ctrl+S", Description: "Snapshot"},
+			{Key: "Esc", Description: "Save & Exit"},
 		}
 	case ScreenSearch:
 		return []KeyHint{
-			{Key: "Type", Description: "filter"},
-			{Key: "↑/↓", Description: "select"},
-			{Key: "Enter", Description: "open note"},
-			{Key: "Esc", Description: "back"},
+			{Key: "Type", Description: "Search"},
+			{Key: "↑/↓", Description: "Select Result"},
+			{Key: "Enter", Description: "Open Note"},
+			{Key: "Esc", Description: "Back"},
 		}
 	case ScreenDiffReview:
 		return []KeyHint{
-			{Key: "y", Description: "accept"},
-			{Key: "n", Description: "reject"},
-			{Key: "a", Description: "accept all"},
-			{Key: "x", Description: "reject all"},
-			{Key: "k", Description: "keep as-is"},
-			{Key: "Enter", Description: "apply"},
-			{Key: "Esc", Description: "cancel"},
+			{Key: "Y", Description: "Accept"},
+			{Key: "N", Description: "Reject"},
+			{Key: "A", Description: "Accept All"},
+			{Key: "K", Description: "Keep As-Is"},
+			{Key: "Enter", Description: "Apply"},
+			{Key: "Esc", Description: "Cancel"},
 		}
 	default:
 		return []KeyHint{
-			{Key: "?", Description: "help"},
-			{Key: "Esc", Description: "back"},
+			{Key: "↑/↓", Description: "Navigate"},
+			{Key: "Esc", Description: "Back"},
+			{Key: "?", Description: "Help"},
 		}
 	}
 }

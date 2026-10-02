@@ -2,51 +2,50 @@ package ui
 
 import "github.com/charmbracelet/lipgloss"
 
-// Colors - "Indigo Ink & Saffron" theme. NO GREEN ANYWHERE.
+// Colors - Pitch Black Developer & Saffron Theme. Strictly NO GREEN.
 const (
-	ColorBackground  = lipgloss.Color("#0E1022")
-	ColorGlassFill   = lipgloss.Color("#1A1E3C")
-	ColorGlassBorder = lipgloss.Color("#2B3166")
-	ColorFrostEdge   = lipgloss.Color("#3A4180")
-	ColorBodyText    = lipgloss.Color("#EDE6D6")
-	ColorSaffron     = lipgloss.Color("#F2A33A")
-	ColorLotusPink   = lipgloss.Color("#E58BB0")
-	ColorMutedText   = lipgloss.Color("#7C82A8")
-	ColorError       = lipgloss.Color("#E5646E")
-	ColorShadow      = lipgloss.Color("#090A18")
-	ColorGradientTop = lipgloss.Color("#0E1022")
-	ColorGradientBot = lipgloss.Color("#161A38")
+	ColorBackground  = lipgloss.Color("#000000") // Pitch black
+	ColorGlassFill   = lipgloss.Color("#000000") // Deep pitch black
+	ColorGlassBorder = lipgloss.Color("#262933") // Clean dark border
+	ColorFrostEdge   = lipgloss.Color("#3A4050") // Crisp border highlight
+	ColorBodyText    = lipgloss.Color("#E2E4E9") // Crisp readable parchment/white
+	ColorSaffron     = lipgloss.Color("#F5A623") // Golden saffron highlight
+	ColorLotusPink   = lipgloss.Color("#E58BB0") // Lotus pink selection/cursor
+	ColorMutedText   = lipgloss.Color("#6C7385") // Muted metadata
+	ColorError       = lipgloss.Color("#E5646E") // Soft coral error
+	ColorShadow      = lipgloss.Color("#000000") // Pitch black
+	ColorGradientTop = lipgloss.Color("#000000")
+	ColorGradientBot = lipgloss.Color("#000000")
 )
 
 // Styles
 var (
 	GlassPanel = lipgloss.NewStyle().
-			Background(ColorGlassFill).
+			Background(ColorBackground).
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(ColorGlassBorder).
 			Foreground(ColorBodyText).
-			Padding(1, 2)
+			Padding(0, 1)
 
 	HeaderStyle = lipgloss.NewStyle().
-			Background(ColorGlassFill).
+			Background(ColorBackground).
 			Foreground(ColorSaffron).
 			Bold(true).
-			Padding(0, 2)
+			Padding(0, 1)
 
 	FooterStyle = lipgloss.NewStyle().
-			Background(ColorGlassFill).
+			Background(ColorBackground).
 			Foreground(ColorMutedText).
-			Padding(0, 2)
+			Padding(0, 1)
 
 	ListItemStyle = lipgloss.NewStyle().
 			Foreground(ColorBodyText).
-			Padding(0, 2)
+			Padding(0, 1)
 
 	SelectedItemStyle = lipgloss.NewStyle().
-			Background(ColorLotusPink).
-			Foreground(ColorBackground).
+			Foreground(ColorSaffron).
 			Bold(true).
-			Padding(0, 2)
+			Padding(0, 1)
 
 	MutedStyle = lipgloss.NewStyle().
 			Foreground(ColorMutedText)

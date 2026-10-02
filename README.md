@@ -1,238 +1,112 @@
 # कोश Kosha — Encrypted Terminal Notes Vault
 
-**Kosha** (Sanskrit कोश: treasury / vault) is a keyboard-first, terminal-only encrypted notes application built in Go. All your notes are stored in encrypted `.vault` files using XChaCha20-Poly1305 authenticated encryption, derived from a single master passphrase via Argon2id.
+**Kosha** (Sanskrit कोश: treasury / vault) is a keyboard-first, terminal-only encrypted notes vault built in Go. All notes are organized cleanly into **Books** and stored in encrypted `.vault` files using **XChaCha20-Poly1305** authenticated encryption with keys derived via **Argon2id**.
 
-## Features
+---
 
-- **End-to-end encryption**: Every file on disk is encrypted. Opening `.vault` files in any editor shows only binary gibberish.
-- **Hierarchical organization**: Books → Chapters → Notes. Each chapter is a separate encrypted file.
-- **Custom markup**: Bold, italic, underline, strikethrough, highlights, alignment, headings, tags, and inter-note links.
-- **AI-powered refinement**: Grammar and clarity fixes via Gemini API, with diff review and accept/reject per block.
-- **Fuzzy search**: Search across all notes by title, body, or tags.
-- **Auto-lock**: Configurable idle timeout zeros key material and clears memory.
-- **Snapshots**: Version history with encrypted snapshots before AI passes.
-- **Glassmorphism UI**: "Indigo Ink & Saffron" theme with faux-glass panels.
-- **Cross-platform**: Linux, macOS, Windows Terminal.
+## 💡 Mental Model: What is a Book, Vault File, and Note?
 
-## Install
+To keep your notes clean and organized, Kosha uses a clear three-tier hierarchy:
 
-### From source
+1. **📚 BOOK (Directory on Disk)**
+   - A folder directly inside `D:\books\` (e.g. `D:\books\algorithms\`).
+   - Represents a notebook, subject, or project.
+   - Contains its own individual encrypted `.vault` files and metadata.
 
+2. **🔐 VAULT FILE / CHAPTER (`.vault` File)**
+   - An individual encrypted binary file inside a book (e.g. `D:\books\algorithms\01J9X4...vault`).
+   - The chapter title and all content inside are 100% encrypted. Opening it in Notepad shows only binary gibberish.
+
+3. **📝 NOTE (Page / Entry)**
+   - An entry stored inside the vault file with a title, formatted body, timestamps, pin status, and tags.
+
+---
+
+## 🚀 Universal Access
+
+Kosha is installed universally on your machine:
 ```bash
-go install github.com/YaswanthKumarMallela01/kosha/cmd/kosha@latest
+go install ./cmd/kosha
 ```
-
-### Build from repo
-
+Because `C:\Users\<user>\go\bin` is in your PATH, you can open a terminal in **any folder or drive** and simply run:
 ```bash
-git clone https://github.com/YaswanthKumarMallela01/KOSHA.git
-cd KOSHA
-go build -o kosha ./cmd/kosha
+kosha vault      # Opens the book selector
+# or
+kosha            # Launches Kosha library
 ```
 
-### Using Make
+All data is safely persisted in one single place:
+**`D:\books\`** (individual book folders containing their own vault files).
 
-```bash
-make build    # Build binary
-make test     # Run tests
-make lint     # Run go vet + golangci-lint
-make run      # Build and run
-```
+---
 
-## Configuration
+## 🎨 Pitch-Black Developer Theme
 
-### First Run
+- **Pure Pitch Black (`#000000`)**: Zero murky blues/purples. Minimalist, high-contrast hacker aesthetic.
+- **Coding Book Symbols**: Clean ASCII/Unicode cards (`📚 BOOK`, `🔐 VAULT FILE`, `📝 NOTE`, `├──`, `└──`).
+- **Golden Saffron Highlights**: Active items, headers, and key markers highlighted in `#F5A623`.
+- **Zero Overflow / Zero Duplicate Footers**: Clean, single-line footer hints with `↑/↓` arrow key navigation.
 
-```bash
-kosha init
-```
+---
 
-This creates:
-- `~/.kosha/config.json` — encrypted key check and Argon2 parameters
-- `~/.kosha/books/inbox/` — default "Inbox" book with "Quick Capture" chapter
+## ⌨️ Controls & Keybindings
 
-Override the data directory with `KOSHA_HOME` environment variable.
+### Navigation (Universal)
+- **`↑ / ↓` or `k / j`**: Move selection up and down smoothly
+- **`Enter`**: Open selected Book / Vault / Note
+- **`Esc` or `Backspace`**: Go back to previous screen
+- **`/` or `Ctrl+K`**: Fuzzy search across all books, vaults, and notes
+- **`t`**: Filter notes by tag
+- **`s`**: Toggle sort order (newest / oldest)
+- **`Ctrl+L`**: Lock vault immediately (clears master key from memory)
+- **`?`**: Toggle full keyboard reference guide
+- **`q`**: Quit application (from library screen)
 
-### Environment Variables
+### Book & Vault Management
+- **`n`**: Create a new Book (on Library screen) or new Vault File (inside a Book) or new Note (inside a Vault)
+- **`r`**: Rename selected Book, Vault, or Note
+- **`d`**: Delete selected item (with confirmation prompt)
+- **`p`**: Pin / unpin note to top of chapter
+- **`x`**: Export decrypted content to standard Markdown files
 
-Create a `.env` file in your working directory or `~/.kosha/.env`:
+### Editor Mode
+- **Arrow keys**: Move cursor
+- **Shift + Arrows**: Select text
+- **Ctrl + Left/Right**: Jump by word
+- **Ctrl + Z / Ctrl + Y**: Undo / Redo
+- **Ctrl + C / X / V**: Copy / Cut / Paste
+- **Ctrl + R**: Toggle between Edit mode and formatted Preview mode
+- **Ctrl + F**: Open formatting toolbar
+- **Ctrl + G**: Run Gemini AI grammar & sparse highlight refinement
+- **Ctrl + S**: Save manual snapshot of vault file
+- **Esc**: Save note and exit back to reading view
 
-```env
-GEMINI_API_KEY=your-api-key-here
-GEMINI_MODEL=gemini-2.0-flash
-KOSHA_LOCK_MINUTES=5
-```
+---
 
-- `GEMINI_API_KEY`: Required for AI refinement (`ctrl+g`). Get one from [Google AI Studio](https://aistudio.google.com/).
-- `GEMINI_MODEL`: Gemini model name (default: `gemini-2.0-flash`).
-- `KOSHA_LOCK_MINUTES`: Auto-lock timeout in minutes. Set to `0` to disable. Default: `5`.
-
-## Commands
+## 🛠️ CLI Commands
 
 | Command | Description |
-|---------|-------------|
-| `kosha` | Launch the TUI at the library screen |
-| `kosha init` | Initialize a new vault |
-| `kosha add "text"` | Quick capture a note to Inbox / Quick Capture |
-| `echo "idea" \| kosha add` | Pipe text as a quick capture |
-| `kosha search "query"` | Launch TUI with search prefilled |
-| `kosha export <book> [--chapter <title>] [--out <dir>]` | Export to Markdown |
-| `kosha version` | Show version |
-| `kosha help` | Show help |
+|---|---|
+| `kosha` | Launch Kosha at the Books selector |
+| `kosha vault` | Explicit command to view all books and select which one to write in |
+| `kosha add "text"` | Quick capture a note directly to your vault without opening the TUI |
+| `echo "idea" \| kosha add` | Pipe text from stdin directly into quick capture |
+| `kosha search "query"` | Launch directly into search mode with prefilled query |
+| `kosha export <book>` | Export book notes to Markdown directory |
+| `kosha version` | Print version |
+| `kosha help` | Show command reference |
 
-## Keybindings
+---
 
-### Global
+## 🔒 Security Architecture
 
-| Key | Action |
-|-----|--------|
-| `↑/↓` or `j/k` | Navigate lists |
-| `Enter` | Open selected item |
-| `Esc` / `Backspace` | Go back |
-| `n` | New (book/chapter/note) |
-| `r` | Rename |
-| `d` | Delete (with confirmation) |
-| `p` | Pin/unpin note |
-| `s` | Toggle sort order |
-| `/` or `Ctrl+K` | Search |
-| `t` | Filter by tag |
-| `e` | Edit note |
-| `x` | Export to Markdown |
-| `Ctrl+L` | Lock vault now |
-| `Ctrl+G` | AI refine (Gemini) |
-| `?` | Help overlay |
-| `q` | Quit (from library screen) |
+- **Cipher**: XChaCha20-Poly1305 with 24-byte random nonces and 16-byte random salts per file.
+- **KDF**: Argon2id (time=3, memory=64 MiB, threads=4) deriving master key from passphrase once per session.
+- **Subkeys**: HKDF-SHA256 deriving distinct per-file encryption keys.
+- **Header Authentication**: Format magic (`KOSHAVLT`) and parameters authenticated as AEAD Additional Data; any tampering causes immediate decryption failure.
+- **Memory Security**: Passphrases and master keys are actively zeroed in memory on lock or application exit.
 
-### Editor
+---
 
-| Key | Action |
-|-----|--------|
-| Arrow keys | Move cursor |
-| `Shift+Arrows` | Select text |
-| `Ctrl+Left/Right` | Word jump |
-| `Home/End` | Start/end of line |
-| `PgUp/PgDn` | Page scroll |
-| `Ctrl+Z` | Undo |
-| `Ctrl+Y` | Redo |
-| `Ctrl+C` | Copy |
-| `Ctrl+X` | Cut |
-| `Ctrl+V` | Paste |
-| `Ctrl+R` | Toggle edit/preview mode |
-| `Ctrl+F` | Toggle format pane |
-| `Alt+B` | Toggle bold |
-| `Alt+I` | Toggle italic |
-| `Alt+U` | Toggle underline |
-| `Alt+S` | Toggle strikethrough |
-| `Alt+L` | Align left |
-| `Alt+E` | Align center |
-| `Alt+R` | Align right |
-
-### Diff Review
-
-| Key | Action |
-|-----|--------|
-| `y` | Accept block |
-| `n` | Reject block |
-| `a` | Accept all |
-| `x` | Reject all |
-| `k` | Keep as-is (mark processed) |
-| `Tab/Shift+Tab` | Next/previous block |
-| `Enter` | Apply changes |
-| `Esc` | Cancel |
-
-## Markup Grammar
-
-Kosha uses a custom inline markup format stored in note bodies:
-
-| Syntax | Rendering |
-|--------|-----------|
-| `**text**` | **Bold** |
-| `*text*` | *Italic* |
-| `__text__` | <u>Underline</u> |
-| `~~text~~` | ~~Strikethrough~~ |
-| `==text==` | Important word (saffron bold) |
-| `^^text^^` | Important sentence (saffron bar + underline) |
-| `` `code` `` | Inline code |
-| `# Heading` | Heading level 1 |
-| `## Heading` | Heading level 2 |
-| `### Heading` | Heading level 3 |
-| `> quote` | Blockquote |
-| `#tag` | Tag (clickable, searchable) |
-| `[[Note Title]]` | Inter-note link |
-| `:::left` | Left-align following text |
-| `:::center` | Center-align following text |
-| `:::right` | Right-align following text |
-| `\*` | Escape (literal asterisk) |
-
-### Nesting
-
-Markup can be nested: `**bold *and italic***` renders as bold text with an italic portion.
-
-### Tags
-
-Tags use `#` followed by letters, digits, hyphens, or underscores (e.g., `#project-x`, `#meeting_notes`). Tags are extracted for the tag filter and search index.
-
-### Links
-
-`[[Note Title]]` creates a navigable link to another note. In reading mode, `Tab` cycles through links and `Enter` follows them. Resolution prefers: same chapter → same book → anywhere. If ambiguous, a picker is shown.
-
-## Security Model
-
-### What encryption protects
-
-- **At rest**: All note content, titles, chapter titles, book names, and metadata are encrypted in `.vault` files. Opening them in any editor shows only binary ciphertext.
-- **Key derivation**: Argon2id with configurable parameters (default: time=3, memory=64 MiB, threads=4) protects against brute-force attacks.
-- **Per-file keys**: Each file has a unique random salt. HKDF-SHA256 derives per-file subkeys from the master key.
-- **Tamper detection**: The entire file header is passed as AEAD additional data. Flipping any byte causes authentication failure.
-- **In memory**: Key material is zeroed on lock/exit. Auto-lock clears all cached plaintext.
-
-### What encryption does NOT protect
-
-- **Side channels**: A determined attacker with access to your running process memory can extract keys.
-- **File metadata**: File sizes, modification times, and directory structure are visible (though names are non-descriptive ULIDs).
-- **Gemini AI**: When using `Ctrl+G`, the plaintext of changed blocks is sent to Google's Gemini API. This is by design for grammar/highlight processing. **Do not use AI refinement for highly sensitive content.**
-- **Clipboard**: Copied text goes through the system clipboard, which other applications can read.
-- **Swap/hibernation**: OS may write memory pages to disk.
-
-### ⚠ WARNING
-
-**If you lose your passphrase, your data is permanently lost.** There is no recovery mechanism. Consider keeping a secure backup of your passphrase.
-
-## Glassmorphism (Faux)
-
-Kosha's UI uses a "faux glassmorphism" effect since terminals cannot blur backgrounds:
-
-- **Glass panels**: Dark fill color (`#1A1E3C`) with rounded borders (`#2B3166`), a lighter frost edge at the top (`#3A4180`), and a shadow row beneath (`#090A18`).
-- **Gradient background**: Vertical gradient from midnight indigo (`#0E1022`) to slightly lighter (`#161A38`).
-- **Truecolor**: The theme uses 24-bit colors. Set `COLORTERM=truecolor` if your terminal supports it.
-
-For the closest-to-real glass effect, enable your terminal's transparency/acrylic:
-
-- **Windows Terminal**: Settings → Profiles → Appearance → Enable acrylic, set opacity to ~85%
-- **WezTerm**: `window_background_opacity = 0.85`
-- **Kitty**: `background_opacity 0.85`
-- **iTerm2**: Profiles → Window → Transparency
-
-## Data Layout
-
-```
-~/.kosha/
-├── config.json              # Encrypted key check, Argon2 params, master salt
-├── .env                     # Optional: API keys, settings
-└── books/
-    ├── inbox/
-    │   ├── book.meta        # Encrypted book metadata
-    │   ├── 01JXYZ...vault   # Encrypted chapter (ULID filename)
-    │   ├── 01JXYZ...vault
-    │   └── .snapshots/
-    │       └── 01JXYZ.../
-    │           ├── 20261002T083000.vault
-    │           └── 20261002T093000.vault
-    └── my-project/
-        ├── book.meta
-        └── 01JXYZ...vault
-```
-
-## License
-
-MIT
+## 📄 License
+MIT License

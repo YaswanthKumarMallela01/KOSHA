@@ -53,6 +53,10 @@ func DefaultDataDir() (string, error) {
 	if dir := os.Getenv("KOSHA_HOME"); dir != "" {
 		return dir, nil
 	}
+	// Check if D:\ exists (preferred location: D:\books)
+	if _, err := os.Stat(`D:\`); err == nil {
+		return `D:\books`, nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
@@ -162,7 +166,11 @@ func EnsureDataDir(dir string) error {
 
 // BooksDir returns the path to the books directory.
 func BooksDir(dataDir string) string {
-	return filepath.Join(dataDir, "books")
+	clean := filepath.Clean(dataDir)
+	if filepath.Base(clean) == "books" || filepath.Base(clean) == "Books" {
+		return clean
+	}
+	return filepath.Join(clean, "books")
 }
 
 // BookDir returns the path to a specific book's directory.

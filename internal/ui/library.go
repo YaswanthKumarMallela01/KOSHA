@@ -40,16 +40,18 @@ func (m *LibraryModel) Refresh() {
 	for i, b := range books {
 		chaps, _ := m.app.library.LoadChapters(b.Slug)
 		chapCount := len(chaps)
-		chapStr := fmt.Sprintf("%d chapters", chapCount)
+		chapStr := fmt.Sprintf("%d encrypted vault file(s) (.vault)", chapCount)
 		if chapCount == 1 {
-			chapStr = "1 chapter"
+			chapStr = "1 encrypted vault file (.vault)"
 		}
 
 		items[i] = ListItem{
 			ID:          b.Slug,
+			Type:        "BOOK",
 			Title:       b.DisplayName,
+			Path:        b.Path,
 			Subtitle:    chapStr,
-			Description: "Created: " + formatTime(b.CreatedAt),
+			Description: formatTime(b.CreatedAt),
 		}
 	}
 
@@ -67,14 +69,14 @@ func (m LibraryModel) Update(msg tea.Msg) (LibraryModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "j", "down":
-			m.list.Down()
-		case "k", "up":
+		case "up", "k":
 			m.list.Up()
+		case "down", "j":
+			m.list.Down()
 		case "pgdown":
-			m.list.PageDown(5)
+			m.list.PageDown(3)
 		case "pgup":
-			m.list.PageUp(5)
+			m.list.PageUp(3)
 		case "home":
 			m.list.Home()
 		case "end":
@@ -91,20 +93,16 @@ func (m LibraryModel) Update(msg tea.Msg) (LibraryModel, tea.Cmd) {
 				}
 			}
 		case "n":
-			m.app.inputOverlay.Open("Enter new book name:", "", "new_book", "")
+			m.app.inputOverlay.Open("Create New Book in D:\\books:", "", "new_book", "")
 			m.app.pushScreen(ScreenNewItem)
 		case "r":
 			if sel := m.list.SelectedItem(); sel != nil {
-				m.app.inputOverlay.Open("Rename book:", sel.Title, "rename_book", sel.ID)
+				m.app.inputOverlay.Open("Rename Book:", sel.Title, "rename_book", sel.ID)
 				m.app.pushScreen(ScreenRename)
 			}
 		case "d":
 			if sel := m.list.SelectedItem(); sel != nil {
-				if sel.ID == "inbox" {
-					m.app.statusMsg = "Cannot delete the default Inbox book"
-					return m, nil
-				}
-				m.app.confirmDialog.Open("Delete book '"+sel.Title+"' and all its contents?", "delete_book", sel.ID)
+				m.app.confirmDialog.Open("Delete book '"+sel.Title+"' and its vault files from disk?", "delete_book", sel.ID)
 				m.app.pushScreen(ScreenConfirmDelete)
 			}
 		case "s":
@@ -137,36 +135,34 @@ func (m LibraryModel) Update(msg tea.Msg) (LibraryModel, tea.Cmd) {
 }
 
 func (m LibraryModel) View() string {
-	listHeight := m.h - 10
+	listHeight := m.h - 8
 	if listHeight < 5 {
 		listHeight = 5
 	}
 
 	content := renderList(m.list.Items, m.list.Selected, m.list.Offset, m.w, listHeight)
 
-	// Resurface card at bottom
-	if m.app.resurfaceNote != nil {
+	// Resurface card at bottom if available
+	if m.app.resurfaceNote != nil && m.h > 18 {
 		rn := m.app.resurfaceNote
 		snippet := rn.Note.Body
-		if len(snippet) > 80 {
-			snippet = snippet[:77] + "..."
+		if len(snippet) > 60 {
+			snippet = snippet[:57] + "..."
 		}
 		snippet = strings.ReplaceAll(snippet, "\n", " ")
 
 		resurfaceCard := lipgloss.NewStyle().
-			Background(ColorGlassFill).
 			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(ColorSaffron).
+			BorderForeground(ColorFrostEdge).
 			Padding(0, 1).
-			Width(m.w - 8).
-			Render(fmt.Sprintf("%s %s › %s › %s\n%s %s",
-				SaffronStyle.Render("✦ RESURFACE [Press Shift+R]:"),
+			Width(m.w - 6).
+			Render(fmt.Sprintf("%s %s › %s › %s  |  %s",
+				SaffronStyle.Render("✦ RESURFACE [Shift+R]:"),
 				rn.BookName, rn.ChapterTitle, rn.Note.Title,
-				MutedStyle.Render("Preview:"),
-				lipgloss.NewStyle().Foreground(ColorBodyText).Render(snippet),
+				lipgloss.NewStyle().Foreground(ColorMutedText).Render(snippet),
 			))
 
-		content = lipgloss.JoinVertical(lipgloss.Left, content, "\n", resurfaceCard)
+		content = lipgloss.JoinVertical(lipgloss.Left, content, resurfaceCard)
 	}
 
 	return content

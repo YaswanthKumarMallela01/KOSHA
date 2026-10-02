@@ -14,35 +14,55 @@ type KeyHint struct {
 	Description string
 }
 
-func renderHeader(title, breadcrumb string, width int, locked bool) string {
+func renderHeader(breadcrumb string, width int, locked bool) string {
 	lockStr := ""
 	if locked {
-		lockStr = " 🔒"
+		lockStr = " 🔒 LOCKED"
 	}
-	left := HeaderStyle.Render("कोश Kosha - " + title + lockStr)
-	right := BreadcrumbStyle.Render(breadcrumb)
-	padWidth := width - lipgloss.Width(left) - lipgloss.Width(right)
-	if padWidth < 0 {
-		padWidth = 0
-	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", padWidth), right)
+
+	left := lipgloss.NewStyle().
+		Background(ColorBackground).
+		Foreground(ColorSaffron).
+		Bold(true).
+		Render("⚡ KOSHA VAULT")
+
+	bcStyle := lipgloss.NewStyle().
+		Background(ColorBackground).
+		Foreground(ColorBodyText).
+		Render(" " + breadcrumb + lockStr)
+
+	topBar := lipgloss.JoinHorizontal(lipgloss.Top, left, bcStyle)
+	divider := lipgloss.NewStyle().
+		Foreground(ColorGlassBorder).
+		Render(strings.Repeat("━", width))
+
+	return topBar + "\n" + divider
 }
 
 func renderFooter(hints []KeyHint, status string, width int) string {
-	var hintStrs []string
+	var parts []string
 	for _, h := range hints {
-		hintStrs = append(hintStrs, fmt.Sprintf("%s %s", SaffronStyle.Render(h.Key), MutedStyle.Render(h.Description)))
+		part := fmt.Sprintf("[%s] %s", SaffronStyle.Render(h.Key), lipgloss.NewStyle().Foreground(ColorBodyText).Render(h.Description))
+		parts = append(parts, part)
 	}
-	left := FooterStyle.Render(strings.Join(hintStrs, " | "))
+
+	left := " " + strings.Join(parts, "  •  ")
 	right := ""
 	if status != "" {
-		right = SaffronStyle.Render(status)
+		right = SaffronStyle.Render("✦ " + status + " ")
 	}
+
 	padWidth := width - lipgloss.Width(left) - lipgloss.Width(right)
 	if padWidth < 0 {
 		padWidth = 0
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", padWidth), right)
+
+	content := left + strings.Repeat(" ", padWidth) + right
+	divider := lipgloss.NewStyle().
+		Foreground(ColorGlassBorder).
+		Render(strings.Repeat("─", width))
+
+	return divider + "\n" + content
 }
 
 func truncateString(s string, max int) string {
@@ -59,32 +79,23 @@ func formatTime(t time.Time) string {
 	return t.Format("2006-01-02 15:04")
 }
 
-// renderGlassPanel renders content inside a styled glass container with frost edge and shadow.
+// renderGlassPanel renders content in a clean, pitch-black container bordered neatly.
 func renderGlassPanel(content string, width, height int) string {
-	panelWidth := width - 4
+	panelWidth := width - 2
 	if panelWidth < 20 {
 		panelWidth = 20
 	}
-	panelHeight := height - 3
-	if panelHeight < 5 {
-		panelHeight = 5
+	panelHeight := height
+	if panelHeight < 3 {
+		panelHeight = 3
 	}
 
-	frostStyle := lipgloss.NewStyle().
-		Background(ColorGlassFill).
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(ColorFrostEdge).
-		BorderTop(true).
-		BorderBottom(true).
-		BorderLeft(true).
-		BorderRight(true).
+	boxStyle := lipgloss.NewStyle().
+		Background(ColorBackground).
 		Width(panelWidth).
-		Height(panelHeight)
+		MaxHeight(panelHeight)
 
-	rendered := frostStyle.Render(content)
-	shadow := ShadowStyle.Render(strings.Repeat("▀", panelWidth+2))
-
-	return lipgloss.JoinVertical(lipgloss.Left, rendered, shadow)
+	return boxStyle.Render(content)
 }
 
 func renderBackground(width, height int) string {
@@ -93,14 +104,16 @@ func renderBackground(width, height int) string {
 
 type ListItem struct {
 	ID          string
+	Type        string // "BOOK", "VAULT", "NOTE", "TAG", "SNAPSHOT"
 	Title       string
+	Path        string
 	Subtitle    string
 	Description string
 	Pinned      bool
 	Badge       string
 }
 
-// ListModel provides robust list navigation state with scrolling.
+// ListModel provides list navigation state with scrolling.
 type ListModel struct {
 	Items    []ListItem
 	Selected int
@@ -157,17 +170,25 @@ func (m *ListModel) SelectedItem() *ListItem {
 	return nil
 }
 
+// renderList renders items as coding cards with symbols for books, vaults, and notes.
 func renderList(items []ListItem, selected, offset int, width, height int) string {
 	if len(items) == 0 {
-		return MutedStyle.Render("  (empty list)")
+		emptyBox := lipgloss.NewStyle().
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(ColorGlassBorder).
+			Padding(1, 2).
+			Width(width - 6).
+			Render("No items found.\nPress [N] to create a new one, or [?] for help.")
+		return "\n" + emptyBox
 	}
 
-	maxVisible := (height - 2) / 3
+	cardHeight := 5 // each coding card is ~4 lines + 1 margin
+	maxVisible := height / cardHeight
 	if maxVisible < 1 {
-		maxVisible = 5
+		maxVisible = 1
 	}
 
-	// Adjust offset to keep selected visible
+	// Adjust offset
 	if selected < offset {
 		offset = selected
 	} else if selected >= offset+maxVisible {
@@ -177,54 +198,89 @@ func renderList(items []ListItem, selected, offset int, width, height int) strin
 		offset = 0
 	}
 
-	var b strings.Builder
 	end := offset + maxVisible
 	if end > len(items) {
 		end = len(items)
 	}
 
-	itemWidth := width - 8
-	if itemWidth < 10 {
-		itemWidth = 10
+	cardWidth := width - 6
+	if cardWidth < 30 {
+		cardWidth = 30
 	}
+
+	var b strings.Builder
 
 	for i := offset; i < end; i++ {
 		item := items[i]
 		isSel := (i == selected)
 
-		pinStr := ""
-		if item.Pinned {
-			pinStr = PinMarker.Render()
-		}
-
-		badgeStr := ""
-		if item.Badge != "" {
-			badgeStr = " " + PinkStyle.Render("["+item.Badge+"]")
-		}
-
-		titleLine := pinStr + item.Title + badgeStr
-		subLine := item.Subtitle
-		if item.Description != "" {
-			subLine += "  " + item.Description
-		}
-
+		// Border color: Golden Saffron for selected, dark steel for unselected
+		borderColor := ColorGlassBorder
+		selectorPrefix := "  "
 		if isSel {
-			renderedTitle := SelectedItemStyle.Width(itemWidth).Render("▸ " + titleLine)
-			renderedSub := lipgloss.NewStyle().
-				Background(ColorGlassBorder).
-				Foreground(ColorBodyText).
-				Width(itemWidth).
-				Render("  " + subLine)
-			b.WriteString(renderedTitle + "\n" + renderedSub + "\n\n")
-		} else {
-			renderedTitle := ListItemStyle.Width(itemWidth).Render("  " + titleLine)
-			renderedSub := MutedStyle.Width(itemWidth).Render("    " + subLine)
-			b.WriteString(renderedTitle + "\n" + renderedSub + "\n\n")
+			borderColor = ColorSaffron
+			selectorPrefix = "▸ "
 		}
+
+		// Header symbol and type
+		typeLabel := "ITEM"
+		switch item.Type {
+		case "BOOK":
+			typeLabel = "📚 BOOK"
+		case "VAULT":
+			typeLabel = "🔐 VAULT FILE (.vault)"
+		case "NOTE":
+			typeLabel = "📝 NOTE"
+		case "TAG":
+			typeLabel = "🏷️  TAG"
+		case "SNAPSHOT":
+			typeLabel = "🕒 SNAPSHOT"
+		}
+
+		pinMarker := ""
+		if item.Pinned {
+			pinMarker = " 📌 [PINNED]"
+		}
+
+		// Build card inner lines
+		line1 := fmt.Sprintf("%sTitle:     %s%s", selectorPrefix, SaffronStyle.Render(item.Title), PinkStyle.Render(pinMarker))
+
+		line2 := ""
+		if item.Path != "" {
+			line2 = fmt.Sprintf("   ├── 📁 Path:     %s\n", MutedStyle.Render(item.Path))
+		}
+
+		line3 := ""
+		if item.Subtitle != "" {
+			line3 = fmt.Sprintf("   ├── ℹ️  Details:  %s\n", lipgloss.NewStyle().Foreground(ColorBodyText).Render(item.Subtitle))
+		}
+
+		line4 := ""
+		if item.Description != "" {
+			line4 = fmt.Sprintf("   └── 🕒 Date:     %s", MutedStyle.Render(item.Description))
+		} else {
+			line4 = "   └──"
+		}
+
+		cardContent := fmt.Sprintf("── %s ──\n%s\n%s%s%s",
+			lipgloss.NewStyle().Bold(true).Foreground(borderColor).Render(typeLabel),
+			line1,
+			line2,
+			line3,
+			line4,
+		)
+
+		cardStyle := lipgloss.NewStyle().
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(borderColor).
+			Padding(0, 1).
+			Width(cardWidth)
+
+		b.WriteString(cardStyle.Render(cardContent) + "\n")
 	}
 
 	if len(items) > maxVisible {
-		scrollInfo := fmt.Sprintf(" [%d-%d of %d] ", offset+1, end, len(items))
+		scrollInfo := fmt.Sprintf("── [Page: Item %d of %d] ── Use [↑/↓] or [J/K] to scroll ──", selected+1, len(items))
 		b.WriteString(MutedStyle.Render(scrollInfo))
 	}
 
@@ -233,49 +289,57 @@ func renderList(items []ListItem, selected, offset int, width, height int) strin
 
 func renderHelpOverlay(width, height int) string {
 	helpText := `
-  KEYBOARD SHORTCUTS REFERENCE
+  ╔════════════════════════════════════════════════════════════════════╗
+  ║                 KOSHA KEYBOARD REFERENCE GUIDE                     ║
+  ╚════════════════════════════════════════════════════════════════════╝
 
-  Global Navigation:
-    ↑/↓ or j/k       Move selection
+  NAVIGATION:
+    ↑ / ↓ or k / j   Navigate items smoothly
     Enter            Open / View selected item
-    Esc / Backspace  Go back / cancel
-    / or Ctrl+K      Global fuzzy search
+    Esc / Backspace  Go back to previous screen
+    / or Ctrl+K      Global fuzzy search across all vaults
     t                Filter notes by tag
-    s                Toggle sort order (newest/oldest)
+    s                Toggle sort order (newest / oldest)
     Ctrl+L           Lock vault immediately
     ?                Toggle this help screen
     q                Quit application (from library)
 
-  Management:
-    n                Create new book / chapter / note
+  MANAGEMENT:
+    n                Create new Book / Chapter Vault / Note
     r                Rename selected item
     d                Delete selected item (with confirmation)
-    p                Pin / unpin selected note
-    x                Export item to Markdown
+    p                Pin / Unpin note
+    x                Export notes to standard Markdown
 
-  Editor:
+  EDITOR MODE:
     Arrow keys       Move cursor
     Shift+Arrows     Select text
     Ctrl+Left/Right  Word jump
     Home / End       Start / end of line
-    PgUp / PgDn      Page up / page down
     Ctrl+Z / Ctrl+Y  Undo / Redo
     Ctrl+C / X / V   Copy / Cut / Paste
     Ctrl+R           Toggle Edit mode / Preview mode
-    Ctrl+F           Toggle format toolbar
+    Ctrl+F           Toggle format panel
     Ctrl+G           Run Gemini AI grammar & highlight refine
-    Ctrl+S           Manual snapshot of chapter
-    Alt+B / Alt+I    Bold / Italic formatting
-    Alt+U / Alt+S    Underline / Strikethrough
-    Alt+L / E / R    Left / Center / Right alignment
+    Ctrl+S           Save snapshot of current vault
+    Esc              Save note and exit editor
 
-  Diff Review (AI Refinement):
+  AI DIFF REVIEW:
     y / n            Accept / Reject current block
     a / x            Accept all / Reject all blocks
-    k                Keep block as-is (do not reprocess)
-    Tab / Shift+Tab  Next / previous diff block
+    k                Keep block as-is
+    Tab / Shift+Tab  Next / previous block
     Enter            Apply accepted changes
-    Esc              Discard AI suggestions
+    Esc              Discard AI changes
 `
-	return renderGlassPanel(helpText, width, height)
+	boxWidth := width - 6
+	if boxWidth < 50 {
+		boxWidth = 50
+	}
+	return lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(ColorSaffron).
+		Padding(1, 2).
+		Width(boxWidth).
+		Render(helpText)
 }

@@ -30,6 +30,8 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "vault":
+		runTUI("")
 	case "init":
 		runInit()
 	case "add":

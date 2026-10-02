@@ -41,13 +41,16 @@ func (m *ChapterModel) Refresh() {
 		tagStr := ""
 		if len(tags) > 0 {
 			tagStr = strings.Join(tags, " ")
+		} else {
+			tagStr = "no tags"
 		}
 
 		items[i] = ListItem{
 			ID:          n.ID,
+			Type:        "NOTE",
 			Title:       n.Title,
 			Subtitle:    tagStr,
-			Description: "Updated: " + formatTime(n.UpdatedAt),
+			Description: formatTime(n.UpdatedAt),
 			Pinned:      n.Pinned,
 		}
 	}
@@ -66,14 +69,14 @@ func (m ChapterModel) Update(msg tea.Msg) (ChapterModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "j", "down":
-			m.list.Down()
-		case "k", "up":
+		case "up", "k":
 			m.list.Up()
+		case "down", "j":
+			m.list.Down()
 		case "pgdown":
-			m.list.PageDown(5)
+			m.list.PageDown(3)
 		case "pgup":
-			m.list.PageUp(5)
+			m.list.PageUp(3)
 		case "home":
 			m.list.Home()
 		case "end":
@@ -100,7 +103,7 @@ func (m ChapterModel) Update(msg tea.Msg) (ChapterModel, tea.Cmd) {
 				}
 			}
 		case "n":
-			m.app.inputOverlay.Open("Enter new note title:", "", "new_note", "")
+			m.app.inputOverlay.Open("Enter Title for New Note in this Vault:", "", "new_note", "")
 			m.app.pushScreen(ScreenNewItem)
 		case "p":
 			if sel := m.list.SelectedItem(); sel != nil {
@@ -111,7 +114,7 @@ func (m ChapterModel) Update(msg tea.Msg) (ChapterModel, tea.Cmd) {
 						m.app.library.SaveChapter(m.app.currentBook.Slug, m.app.currentChapter)
 						m.Refresh()
 						if n.Pinned {
-							m.app.statusMsg = "Note pinned"
+							m.app.statusMsg = "Note pinned to top"
 						} else {
 							m.app.statusMsg = "Note unpinned"
 						}
@@ -121,7 +124,7 @@ func (m ChapterModel) Update(msg tea.Msg) (ChapterModel, tea.Cmd) {
 			}
 		case "r":
 			if sel := m.list.SelectedItem(); sel != nil {
-				m.app.inputOverlay.Open("Rename note:", sel.Title, "rename_note", sel.ID)
+				m.app.inputOverlay.Open("Rename Note:", sel.Title, "rename_note", sel.ID)
 				m.app.pushScreen(ScreenRename)
 			}
 		case "d":
@@ -149,7 +152,7 @@ func (m ChapterModel) Update(msg tea.Msg) (ChapterModel, tea.Cmd) {
 }
 
 func (m ChapterModel) View() string {
-	listHeight := m.h - 6
+	listHeight := m.h - 8
 	if listHeight < 5 {
 		listHeight = 5
 	}

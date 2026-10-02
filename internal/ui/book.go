@@ -41,16 +41,18 @@ func (m *BookModel) Refresh() {
 	items := make([]ListItem, len(chapters))
 	for i, ch := range chapters {
 		noteCount := len(ch.Notes)
-		noteStr := fmt.Sprintf("%d notes", noteCount)
+		noteStr := fmt.Sprintf("%d encrypted note(s) inside", noteCount)
 		if noteCount == 1 {
-			noteStr = "1 note"
+			noteStr = "1 encrypted note inside"
 		}
 
 		items[i] = ListItem{
 			ID:          ch.ID,
+			Type:        "VAULT",
 			Title:       ch.Title,
+			Path:        ch.ID + ".vault",
 			Subtitle:    noteStr,
-			Description: "Created: " + formatTime(ch.CreatedAt),
+			Description: formatTime(ch.CreatedAt),
 		}
 	}
 
@@ -68,14 +70,14 @@ func (m BookModel) Update(msg tea.Msg) (BookModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "j", "down":
-			m.list.Down()
-		case "k", "up":
+		case "up", "k":
 			m.list.Up()
+		case "down", "j":
+			m.list.Down()
 		case "pgdown":
-			m.list.PageDown(5)
+			m.list.PageDown(3)
 		case "pgup":
-			m.list.PageUp(5)
+			m.list.PageUp(3)
 		case "home":
 			m.list.Home()
 		case "end":
@@ -91,16 +93,16 @@ func (m BookModel) Update(msg tea.Msg) (BookModel, tea.Cmd) {
 				}
 			}
 		case "n":
-			m.app.inputOverlay.Open("Enter new chapter title:", "", "new_chapter", "")
+			m.app.inputOverlay.Open("Create New Chapter / Vault File in this book:", "", "new_chapter", "")
 			m.app.pushScreen(ScreenNewItem)
 		case "r":
 			if sel := m.list.SelectedItem(); sel != nil {
-				m.app.inputOverlay.Open("Rename chapter:", sel.Title, "rename_chapter", sel.ID)
+				m.app.inputOverlay.Open("Rename Chapter:", sel.Title, "rename_chapter", sel.ID)
 				m.app.pushScreen(ScreenRename)
 			}
 		case "d":
 			if sel := m.list.SelectedItem(); sel != nil {
-				m.app.confirmDialog.Open("Delete chapter '"+sel.Title+"'?", "delete_chapter", sel.ID)
+				m.app.confirmDialog.Open("Delete vault file '"+sel.Title+"' (.vault)?", "delete_chapter", sel.ID)
 				m.app.pushScreen(ScreenConfirmDelete)
 			}
 		case "s":
@@ -123,7 +125,7 @@ func (m BookModel) Update(msg tea.Msg) (BookModel, tea.Cmd) {
 }
 
 func (m BookModel) View() string {
-	listHeight := m.h - 6
+	listHeight := m.h - 8
 	if listHeight < 5 {
 		listHeight = 5
 	}
