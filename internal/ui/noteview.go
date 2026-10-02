@@ -94,7 +94,7 @@ func (m NoteViewModel) Update(msg tea.Msg) (NoteViewModel, tea.Cmd) {
 				}
 				m.app.statusMsg = fmt.Sprintf("Note '[%s]' not found", target)
 			}
-		case "e":
+		case "e", "E":
 			if m.app.currentNote != nil {
 				m.app.openEditor(m.app.currentNote)
 			}

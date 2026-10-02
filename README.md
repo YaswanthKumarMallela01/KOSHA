@@ -19,23 +19,59 @@ Kosha simplifies your notes workflow into a fast, direct structure:
 
 ---
 
+## 📦 Downloads & Installation (Windows, macOS, Linux)
+
+Kosha is available as a single, static binary with **zero external dependencies** for Windows, macOS, and Linux.
+
+### Download from GitHub Releases
+Download the precompiled binary for your operating system directly from the **[GitHub Releases](https://github.com/YaswanthKumarMallela01/KOSHA/releases)** page:
+
+| Platform | Binary | Architecture |
+|---|---|---|
+| **Windows** | `kosha-windows-amd64.exe` | 64-bit Intel/AMD |
+| **Linux** | `kosha-linux-amd64` | 64-bit x86_64 |
+| **macOS (Apple Silicon)** | `kosha-darwin-arm64` | M1 / M2 / M3 / M4 |
+| **macOS (Intel)** | `kosha-darwin-amd64` | 64-bit Intel |
+
+#### Quick Install (from source with Go)
+If you have Go installed:
+```bash
+go install github.com/YaswanthKumarMallela01/kosha/cmd/kosha@latest
+```
+Ensure `~/go/bin` (or `%USERPROFILE%\go\bin` on Windows) is in your `PATH`.
+
+---
+
 ## 🎨 Compact ASCII Art & Pitch-Black Developer Theme
 
 - **Pure Pitch Black (`#000000`)**: Zero murky blues/purples. Minimalist, high-contrast aesthetic across all screens.
 - **Compact 3D ASCII Book & Vault Cards**: Neat, matching 24x7 terminal cards lined up horizontally side-wise with sliding navigation (`◀◀ [1 of 4] ▶▶`).
 - **Live Vault Preview**: Selecting any vault immediately displays an encrypted file summary and a live text preview of the notes written inside it.
-- **Coding Text Editor**: Clean line numbers with vertical dividers, active line highlights, live cursor position, line count, word count, character count, and instant autosave indicators.
+- **Peaceful Read Mode**: Distraction-free reading with beautiful Markdown ANSI rendering (bold, italics, underline, highlights, headers), with minimal peaceful hints.
+- **Spacious Coding Editor**: Line numbers with vertical dividers, active line highlights, and a status bar cleanly pinned to the **very bottom** of the pane leaving full space for text.
 - **Golden Saffron Highlights**: Active selections, book titles, headers, and key markers highlighted in `#F5A623`.
 - **Zero Green Anywhere**: Strictly respects the saffron, lotus pink, and body text palette.
 - **Zero Terminal Scrolling**: Auto-clamped layouts prevent duplicate footers or screen tearing on Windows Terminal.
 
 ---
 
+## 🤖 Gemini AI Copy-Editor (`gemini-2.0-flash-lite`)
+
+Set your API key and preferred model in `.env` (or system environment):
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-2.0-flash-lite
+```
+Inside the editor, press **`Ctrl+G`** to automatically copy-edit spelling, grammar, and add sparse, beautiful highlights (`==key points==`).
+
+---
+
 ## ⌨️ Controls & Keybindings
 
 ### Navigation (Universal)
-- **`↑ / ↓` or `k / j`**: Move selection up and down smoothly
-- **`Enter`**: Open selected Book / Vault / Note
+- **`← / →` or `h / l` / `↑ / ↓`**: Move selection across side-wise cards smoothly
+- **`Enter`**: Open selected Book, or open Vault in **Peaceful Read Mode**
+- **`E`**: Open Vault directly in **Edit Mode**
 - **`Esc` or `Backspace`**: Go back to previous screen
 - **`/` or `Ctrl+K`**: Fuzzy search across all books, vaults, and notes
 - **`t`**: Filter notes by tag
@@ -45,23 +81,19 @@ Kosha simplifies your notes workflow into a fast, direct structure:
 - **`q`**: Quit application (from library screen)
 
 ### Book & Vault Management
-- **`Ctrl+N` or `n` / `N`**: Create a new Book (on Library screen) or new Vault File (inside a Book) or new Note (inside a Vault)
-- **`r`**: Rename selected Book, Vault, or Note
+- **`Ctrl+N` or `n` / `N`**: Create a new Book (on Library screen) or new Vault (inside a Book)
+- **`r`**: Rename selected Book or Vault
 - **`d`**: Delete selected item (with confirmation prompt)
-- **`p`**: Pin / unpin note to top of chapter
 - **`x`**: Export decrypted content to standard Markdown files
 
-### Coding Editor Mode
-- **Arrow keys**: Move cursor
-- **Shift + Arrows**: Select text
-- **Ctrl + Left/Right**: Jump by word
-- **Ctrl + Z / Ctrl + Y**: Undo / Redo
-- **Ctrl + C / X / V**: Copy / Cut / Paste
-- **Ctrl + R**: Toggle between Edit mode and formatted Preview mode
-- **Ctrl + F**: Open formatting toolbar
-- **Ctrl + G**: Run Gemini AI copy-editor & sparse highlight refinement (syncs active buffer)
-- **Ctrl + S**: Save manual snapshot of vault file
-- **Esc**: Save note and exit back to reading view
+### Reading & Editing
+- **`Enter` (on Vault)**: Open **Peaceful Read Mode** with rendered typography
+- **`E` (in Read Mode or on Vault)**: Switch to **Coding Editor** to write notes
+- **`Ctrl+R` (in Editor)**: Toggle back into Peaceful Read Mode
+- **`Ctrl+F`**: Open formatting toolbar
+- **`Ctrl+G`**: Run Gemini AI copy-editor & smart highlights
+- **`Ctrl+S`**: Save manual snapshot of vault file
+- **`Esc`**: Save note and exit back to the side-wise vaults shelf
 
 ---
 

@@ -272,6 +272,17 @@ func (a *App) updateEditor(msg tea.Msg) tea.Cmd {
 			a.currentNote = nil
 			a.screen = ScreenBook
 			return nil
+		case "ctrl+r":
+			// Toggle to peaceful Read Mode
+			if a.currentNote != nil && a.currentChapter != nil && a.currentBook != nil {
+				a.currentNote.Body = a.editorModel.Content()
+				a.currentNote.UpdatedAt = time.Now()
+				_ = a.library.SaveChapter(a.currentBook.Slug, a.currentChapter)
+				a.buildSearchIndex()
+				a.noteView.Refresh()
+			}
+			a.screen = ScreenNoteView
+			return nil
 		case "ctrl+g":
 			return a.triggerAIRefine()
 		case "ctrl+s":
@@ -791,10 +802,17 @@ func (a *App) getFooterHints() []KeyHint {
 	case ScreenBook:
 		return []KeyHint{
 			{Key: "←/→ or ↑/↓", Description: "Browse Vaults"},
-			{Key: "Enter / E", Description: "Write Notes in Vault"},
+			{Key: "Enter", Description: "Read Mode"},
+			{Key: "E", Description: "Edit Notes"},
 			{Key: "Ctrl+N / N", Description: "New Vault"},
 			{Key: "D", Description: "Delete"},
 			{Key: "Esc", Description: "Back to Books"},
+		}
+	case ScreenNoteView:
+		return []KeyHint{
+			{Key: "E", Description: "Edit Notes"},
+			{Key: "↑/↓ or J/K", Description: "Scroll"},
+			{Key: "Esc", Description: "Back to Vaults"},
 		}
 	case ScreenNewItem:
 		return []KeyHint{
@@ -813,7 +831,7 @@ func (a *App) getFooterHints() []KeyHint {
 		}
 	case ScreenNoteEdit:
 		return []KeyHint{
-			{Key: "Ctrl+R", Description: "Preview"},
+			{Key: "Ctrl+R", Description: "Read Mode"},
 			{Key: "Ctrl+F", Description: "Format"},
 			{Key: "Ctrl+G", Description: "AI Refine"},
 			{Key: "Ctrl+S", Description: "Snapshot"},

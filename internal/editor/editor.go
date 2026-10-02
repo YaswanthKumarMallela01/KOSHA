@@ -795,10 +795,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		maxLines := m.height - 3
+		if maxLines < 3 {
+			maxLines = 3
+		}
 		if m.buffer.cursorY < m.scrollOffset {
 			m.scrollOffset = m.buffer.cursorY
-		} else if m.buffer.cursorY >= m.scrollOffset+m.height-1 {
-			m.scrollOffset = m.buffer.cursorY - m.height + 2
+		} else if m.buffer.cursorY >= m.scrollOffset+maxLines {
+			m.scrollOffset = m.buffer.cursorY - maxLines + 1
 		}
 	}
 
@@ -933,6 +937,13 @@ func (m Model) View() string {
 		if i < endLine-1 {
 			sb.WriteString("\n")
 		}
+	}
+	
+	// Pad empty lines so the text editor area is fully expanded and the status bar is pinned at the bottom!
+	linesRendered := endLine - startLine
+	for i := linesRendered; i < maxLines; i++ {
+		sb.WriteString("\n")
+		sb.WriteString(dividerStyle.Render("     │ "))
 	}
 	
 	mainView := sb.String()

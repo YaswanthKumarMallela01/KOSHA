@@ -81,8 +81,30 @@ func (m BookModel) Update(msg tea.Msg) (BookModel, tea.Cmd) {
 			if len(m.chapters) > 0 {
 				m.selected = len(m.chapters) - 1
 			}
-		case "enter", "e", "E":
-			// Open editor directly to write in this vault chapter!
+		case "enter":
+			// Open Read Mode to read formatted text peacefully
+			if sel := m.SelectedChapter(); sel != nil {
+				m.app.currentChapter = sel
+				var targetNote *model.Note
+				if len(sel.Notes) > 0 {
+					targetNote = sel.Notes[0]
+				} else {
+					targetNote = &model.Note{
+						ID:        model.NewID(),
+						Title:     sel.Title,
+						Body:      "",
+						CreatedAt: time.Now(),
+						UpdatedAt: time.Now(),
+					}
+					_ = m.app.library.AddNote(m.app.currentBook.Slug, sel.ID, targetNote)
+				}
+				m.app.currentNote = targetNote
+				m.app.noteView.Refresh()
+				m.app.pushScreen(ScreenNoteView)
+				return m, nil
+			}
+		case "e", "E":
+			// Open Edit Mode directly
 			if sel := m.SelectedChapter(); sel != nil {
 				m.app.currentChapter = sel
 				var targetNote *model.Note
@@ -207,7 +229,7 @@ func (m BookModel) View() string {
 			lipgloss.NewStyle().Foreground(ColorBodyText).PaddingLeft(4).Render(previewText),
 		))
 
-	guide := MutedStyle.Render("Press [Enter] or [E] to write in this vault  •  [Ctrl+N] New Vault  •  [Esc] Back to Books")
+	guide := MutedStyle.Render("Press [Enter] Read Mode  •  [E] Edit Notes  •  [Ctrl+N] New Vault  •  [Esc] Back to Books")
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		cardRow,

@@ -9,6 +9,7 @@
 /kosha
 /kosha.exe
 /bin/
+/dist/
 
 # OS
 .DS_Store
