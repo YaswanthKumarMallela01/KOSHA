@@ -93,7 +93,7 @@ func renderGlassPanel(content string, width, height int) string {
 	boxStyle := lipgloss.NewStyle().
 		Background(ColorBackground).
 		Width(panelWidth).
-		MaxHeight(panelHeight)
+		Height(panelHeight)
 
 	return boxStyle.Render(content)
 }

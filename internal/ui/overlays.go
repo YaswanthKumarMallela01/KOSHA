@@ -65,14 +65,23 @@ func (m InputOverlayModel) View() string {
 }
 
 type ConfirmDialogModel struct {
-	Message  string
-	Action   string // "delete_book", "delete_chapter", "delete_note", "quit"
-	TargetID string
-	Active   bool
+	Message       string
+	Action        string // "delete_book", "delete_chapter", "delete_note"
+	TargetID      string
+	Active        bool
+	PasswordInput textinput.Model
 }
 
 func NewConfirmDialogModel() ConfirmDialogModel {
-	return ConfirmDialogModel{}
+	ti := textinput.New()
+	ti.EchoMode = textinput.EchoPassword
+	ti.EchoCharacter = '•'
+	ti.Placeholder = "Enter master passphrase..."
+	ti.CharLimit = 100
+	ti.Width = 36
+	return ConfirmDialogModel{
+		PasswordInput: ti,
+	}
 }
 
 func (m *ConfirmDialogModel) Open(message, action, targetID string) {
@@ -80,14 +89,19 @@ func (m *ConfirmDialogModel) Open(message, action, targetID string) {
 	m.Action = action
 	m.TargetID = targetID
 	m.Active = true
+	m.PasswordInput.Reset()
+	m.PasswordInput.Focus()
 }
 
 func (m *ConfirmDialogModel) Close() {
 	m.Active = false
+	m.PasswordInput.Reset()
 }
 
 func (m ConfirmDialogModel) Update(msg tea.Msg) (ConfirmDialogModel, tea.Cmd) {
-	return m, nil
+	var cmd tea.Cmd
+	m.PasswordInput, cmd = m.PasswordInput.Update(msg)
+	return m, cmd
 }
 
 func (m ConfirmDialogModel) View() string {
@@ -96,12 +110,13 @@ func (m ConfirmDialogModel) View() string {
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(ColorError).
 		Padding(1, 3).
-		Width(50)
+		Width(56)
 
-	content := fmt.Sprintf("%s\n\n%s\n\n%s",
-		ErrorStyle.Render("CONFIRM ACTION"),
+	content := fmt.Sprintf("%s\n\n%s\n\n%s\n\n%s",
+		ErrorStyle.Render("⚠ CONFIRM DELETION (PASSPHRASE REQUIRED)"),
 		m.Message,
-		MutedStyle.Render("[y] Yes  [n / Esc] No"),
+		m.PasswordInput.View(),
+		MutedStyle.Render("[Enter] Confirm Delete  •  [Esc] Cancel"),
 	)
 
 	return boxStyle.Render(content)

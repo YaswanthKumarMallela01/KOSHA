@@ -229,15 +229,11 @@ func (m BookModel) View() string {
 			lipgloss.NewStyle().Foreground(ColorBodyText).PaddingLeft(4).Render(previewText),
 		))
 
-	guide := MutedStyle.Render("Press [Enter] Read Mode  •  [E] Edit Notes  •  [Ctrl+N] New Vault  •  [Esc] Back to Books")
-
 	return lipgloss.JoinVertical(lipgloss.Left,
 		cardRow,
 		"\n",
 		MutedStyle.Render(navIndicator),
 		"\n",
 		infoBox,
-		"\n",
-		guide,
 	)
 }

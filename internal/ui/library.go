@@ -168,15 +168,11 @@ func (m LibraryModel) View() string {
 			MutedStyle.Render(formatTime(selBook.CreatedAt)),
 		))
 
-	guide := MutedStyle.Render("Press [Enter] to open this book & view its vaults  •  [Ctrl+N] Create New Book")
-
 	return lipgloss.JoinVertical(lipgloss.Left,
 		cardRow,
 		"\n",
 		MutedStyle.Render(navIndicator),
 		"\n",
 		infoBox,
-		"\n",
-		guide,
 	)
 }

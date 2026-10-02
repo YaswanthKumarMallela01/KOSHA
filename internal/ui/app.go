@@ -14,6 +14,7 @@ import (
 
 	"github.com/YaswanthKumarMallela01/kosha/internal/ai"
 	"github.com/YaswanthKumarMallela01/kosha/internal/config"
+	"github.com/YaswanthKumarMallela01/kosha/internal/crypto"
 	"github.com/YaswanthKumarMallela01/kosha/internal/editor"
 	"github.com/YaswanthKumarMallela01/kosha/internal/markup"
 	"github.com/YaswanthKumarMallela01/kosha/internal/model"
@@ -24,7 +25,8 @@ import (
 type Screen int
 
 const (
-	ScreenPassphrase Screen = iota
+	ScreenLoading Screen = iota
+	ScreenPassphrase
 	ScreenLibrary
 	ScreenBook
 	ScreenChapter
@@ -84,20 +86,32 @@ type App struct {
 	resurfaceNote *store.NoteRef
 	aiClient      *ai.Client
 	aiProcessing  bool
-	showHelp      bool
-	theme         *markup.Theme
+	showHelp        bool
+	theme           *markup.Theme
+	loadingStep     int
+	maxLoadingSteps int
+}
+
+type loadingTickMsg struct{}
+
+func loadingTick() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+		return loadingTickMsg{}
+	})
 }
 
 func NewApp(cfg *config.Config, lib *store.Library, idx *search.Index, aiCli *ai.Client) *App {
 	a := &App{
-		screen:       ScreenLibrary,
-		library:      lib,
-		config:       cfg,
-		searchIndex:  idx,
-		aiClient:     aiCli,
-		lastActivity: time.Now(),
-		lockMinutes:  cfg.LockMinutes,
-		theme:        markup.NewDefaultTheme(),
+		screen:          ScreenLoading,
+		loadingStep:     0,
+		maxLoadingSteps: 30, // 30 * 100ms = 3.0 seconds
+		library:         lib,
+		config:          cfg,
+		searchIndex:     idx,
+		aiClient:        aiCli,
+		lastActivity:    time.Now(),
+		lockMinutes:     cfg.LockMinutes,
+		theme:           markup.NewDefaultTheme(),
 	}
 
 	a.passphrase = NewPassphraseModel()
@@ -124,6 +138,7 @@ func NewApp(cfg *config.Config, lib *store.Library, idx *search.Index, aiCli *ai
 func (a *App) Init() tea.Cmd {
 	return tea.Batch(
 		textinput.Blink,
+		loadingTick(),
 		tea.Tick(time.Minute, func(t time.Time) tea.Msg {
 			return tickMsg(t)
 		}),
@@ -140,6 +155,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		a.lastActivity = time.Now()
 		a.statusMsg = "" // clear status on key press
+
+		if a.screen == ScreenLoading {
+			a.screen = ScreenLibrary
+			a.libraryList.Refresh()
+			return a, nil
+		}
 
 		if msg.String() == "ctrl+c" {
 			// Save active note if in editor before exit
@@ -207,6 +228,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.diffModel.SetBlocks(msg.diffs)
 		a.pushScreen(ScreenDiffReview)
 		return a, nil
+
+	case loadingTickMsg:
+		if a.screen == ScreenLoading {
+			a.loadingStep++
+			if a.loadingStep >= a.maxLoadingSteps {
+				a.screen = ScreenLibrary
+				a.libraryList.Refresh()
+				return a, nil
+			}
+			return a, loadingTick()
+		}
 
 	case aiErrorMsg:
 		a.aiProcessing = false
@@ -412,31 +444,54 @@ func (a *App) updateRename(msg tea.Msg) tea.Cmd {
 func (a *App) updateConfirmDelete(msg tea.Msg) tea.Cmd {
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		switch keyMsg.String() {
-		case "y", "Y":
+		case "enter":
+			pass := strings.TrimSpace(a.confirmDialog.PasswordInput.Value())
+			if pass == "" {
+				a.statusMsg = "Passphrase required. Deletion aborted."
+				a.confirmDialog.Close()
+				a.popScreen()
+				return nil
+			}
+
+			// Validate passphrase against master key check
+			derived := crypto.DeriveMasterKey([]byte(pass), []byte(a.config.MasterSalt), a.config.ArgonParams)
+			crypto.ZeroBytes([]byte(pass))
+			if !crypto.ValidateKeyCheck([]byte(a.config.KeyCheck), derived) {
+				crypto.ZeroBytes(derived)
+				a.statusMsg = "Incorrect passphrase! Deletion aborted."
+				a.confirmDialog.Close()
+				a.popScreen()
+				return nil
+			}
+			crypto.ZeroBytes(derived)
+
 			switch a.confirmDialog.Action {
 			case "delete_book":
 				_ = a.library.DeleteBook(a.confirmDialog.TargetID)
 				a.libraryList.Refresh()
-				a.statusMsg = "Book deleted"
+				a.statusMsg = "Book deleted successfully"
 			case "delete_chapter":
 				_ = a.library.DeleteChapter(a.currentBook.Slug, a.confirmDialog.TargetID)
 				a.bookList.Refresh()
-				a.statusMsg = "Chapter deleted"
+				a.statusMsg = "Vault chapter deleted successfully"
 			case "delete_note":
 				_ = a.library.DeleteNote(a.currentBook.Slug, a.currentChapter.ID, a.confirmDialog.TargetID)
 				a.chapterList.Refresh()
-				a.statusMsg = "Note deleted"
+				a.statusMsg = "Note deleted successfully"
 			}
 			a.confirmDialog.Close()
 			a.popScreen()
 			return nil
-		case "n", "N", "esc":
+		case "esc":
 			a.confirmDialog.Close()
 			a.popScreen()
 			return nil
 		}
 	}
-	return nil
+
+	var cmd tea.Cmd
+	a.confirmDialog, cmd = a.confirmDialog.Update(msg)
+	return cmd
 }
 
 func (a *App) openEditor(note *model.Note) {
@@ -635,6 +690,10 @@ func (a *App) triggerAIRefine() tea.Cmd {
 func (a *App) View() string {
 	if a.width < 50 || a.height < 15 {
 		return "Terminal too small. Minimum size: 50x15. Please resize."
+	}
+
+	if a.screen == ScreenLoading {
+		return a.renderLoadingScreen()
 	}
 
 	if a.locked {
@@ -860,4 +919,51 @@ func (a *App) getFooterHints() []KeyHint {
 			{Key: "?", Description: "Help"},
 		}
 	}
+}
+
+func (a *App) renderLoadingScreen() string {
+	percent := (a.loadingStep * 100) / a.maxLoadingSteps
+	if percent > 100 {
+		percent = 100
+	}
+
+	totalBars := 26
+	filled := (a.loadingStep * totalBars) / a.maxLoadingSteps
+	if filled > totalBars {
+		filled = totalBars
+	}
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", totalBars-filled)
+
+	msg := "✦ Opening Books & Encrypted Vaults..."
+	sub := "Scanning D:\\books\\ directory..."
+	if a.loadingStep > 20 {
+		msg = "✦ Preparing Bookshelf..."
+		sub = "Ready. Welcome to Kosha."
+	} else if a.loadingStep > 10 {
+		msg = "✦ Decrypting Vault Chapter Headers..."
+		sub = "Authenticating XChaCha20-Poly1305 headers..."
+	}
+
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(ColorSaffron)
+	barStyle := lipgloss.NewStyle().Foreground(ColorSaffron)
+	muted := lipgloss.NewStyle().Foreground(ColorMutedText)
+	boxStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(ColorGlassBorder).
+		Padding(1, 4).
+		Align(lipgloss.Center)
+
+	content := fmt.Sprintf("%s\n%s\n\n%s\n\n%s [%s] %d%%\n\n%s\n\n%s",
+		titleStyle.Render("⚡  K O S H A   V A U L T  ⚡"),
+		muted.Render("[ Sanskrit कोश: Sacred Treasury ]"),
+		lipgloss.NewStyle().Bold(true).Foreground(ColorBodyText).Render(msg),
+		barStyle.Render("⏳"),
+		barStyle.Render(bar),
+		percent,
+		muted.Render(sub),
+		muted.Render("Press [Space / Enter] to skip"),
+	)
+
+	box := boxStyle.Render(content)
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, box)
 }

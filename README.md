@@ -83,7 +83,7 @@ Inside the editor, press **`Ctrl+G`** to automatically copy-edit spelling, gramm
 ### Book & Vault Management
 - **`Ctrl+N` or `n` / `N`**: Create a new Book (on Library screen) or new Vault (inside a Book)
 - **`r`**: Rename selected Book or Vault
-- **`d`**: Delete selected item (with confirmation prompt)
+- **`d`**: Delete selected item (strictly requires master passphrase confirmation)
 - **`x`**: Export decrypted content to standard Markdown files
 
 ### Reading & Editing
