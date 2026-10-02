@@ -169,17 +169,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 
-		if msg.String() == "ctrl+n" && a.screen != ScreenNoteEdit {
+		if (msg.String() == "ctrl+n" || msg.String() == "ctrl+N") && a.screen != ScreenNoteEdit && a.screen != ScreenNewItem && a.screen != ScreenRename {
 			if a.screen == ScreenLibrary {
 				a.inputOverlay.Open("Create New Book in D:\\books (e.g. Operating Systems):", "", "new_book", "")
 				a.pushScreen(ScreenNewItem)
 				return a, nil
-			} else if a.screen == ScreenBook {
-				a.inputOverlay.Open("Create New Vault Section in this book (e.g. Memory Management):", "", "new_chapter", "")
-				a.pushScreen(ScreenNewItem)
-				return a, nil
-			} else if a.screen == ScreenChapter {
-				a.inputOverlay.Open("Enter Title for New Note in this Vault:", "", "new_note", "")
+			} else if a.screen == ScreenBook && a.currentBook != nil {
+				a.inputOverlay.Open("Create New Vault Section in "+a.currentBook.DisplayName+" (e.g. Memory Management):", "", "new_vault", "")
 				a.pushScreen(ScreenNewItem)
 				return a, nil
 			}
@@ -265,15 +261,16 @@ func (a *App) updateEditor(msg tea.Msg) tea.Cmd {
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		switch keyMsg.String() {
 		case "esc":
-			// Save and return to NoteView
-			if a.currentNote != nil && a.currentChapter != nil {
+			// Save and return to Book (vaults shelf)
+			if a.currentNote != nil && a.currentChapter != nil && a.currentBook != nil {
 				a.currentNote.Body = a.editorModel.Content()
 				a.currentNote.UpdatedAt = time.Now()
 				_ = a.library.SaveChapter(a.currentBook.Slug, a.currentChapter)
 				a.buildSearchIndex()
-				a.noteView.Refresh()
+				a.bookList.Refresh()
 			}
-			a.screen = ScreenNoteView
+			a.currentNote = nil
+			a.screen = ScreenBook
 			return nil
 		case "ctrl+g":
 			return a.triggerAIRefine()
@@ -301,6 +298,7 @@ func (a *App) updateNewItem(msg tea.Msg) tea.Cmd {
 		case "enter":
 			val := strings.TrimSpace(a.inputOverlay.Input.Value())
 			if val == "" {
+				a.inputOverlay.Close()
 				a.popScreen()
 				return nil
 			}
@@ -313,31 +311,40 @@ func (a *App) updateNewItem(msg tea.Msg) tea.Cmd {
 					a.bookList.Refresh()
 					a.screen = ScreenBook
 					a.statusMsg = "Book created: " + b.DisplayName
+				} else if err != nil {
+					a.statusMsg = "Error creating book: " + err.Error()
 				}
-			case "new_chapter":
-				ch, err := a.library.CreateChapter(a.currentBook.Slug, val)
-				if err == nil && ch != nil {
-					a.currentChapter = ch
-					a.bookList.Refresh()
-					a.chapterList.Refresh()
-					a.screen = ScreenChapter
-					a.statusMsg = "Chapter created: " + ch.Title
+				a.inputOverlay.Close()
+				return nil
+			case "new_vault", "new_chapter":
+				if a.currentBook != nil {
+					ch, err := a.library.CreateChapter(a.currentBook.Slug, val)
+					if err == nil && ch != nil {
+						note := &model.Note{
+							ID:        model.NewID(),
+							Title:     val,
+							Body:      "",
+							CreatedAt: time.Now(),
+							UpdatedAt: time.Now(),
+						}
+						_ = a.library.AddNote(a.currentBook.Slug, ch.ID, note)
+						a.currentChapter = ch
+						a.currentNote = note
+						a.bookList.Refresh()
+						a.inputOverlay.Close()
+						a.openEditor(note)
+						a.statusMsg = "Vault created: " + ch.Title + " — start writing notes!"
+						return nil
+					} else if err != nil {
+						a.statusMsg = "Error creating vault: " + err.Error()
+					}
 				}
-			case "new_note":
-				note := &model.Note{
-					ID:        model.NewID(),
-					Title:     val,
-					Body:      "",
-					CreatedAt: time.Now(),
-					UpdatedAt: time.Now(),
-				}
-				_ = a.library.AddNote(a.currentBook.Slug, a.currentChapter.ID, note)
-				a.currentNote = note
-				a.chapterList.Refresh()
-				a.openEditor(note)
-				a.statusMsg = "Note created: " + note.Title
+				a.inputOverlay.Close()
+				a.popScreen()
+				return nil
 			}
 			a.inputOverlay.Close()
+			a.popScreen()
 			return nil
 		case "esc":
 			a.inputOverlay.Close()
@@ -648,21 +655,9 @@ func (a *App) View() string {
 	case ScreenTagFilter:
 		content = a.tagModel.View()
 	case ScreenNewItem, ScreenRename:
-		baseView := a.libraryList.View()
-		if a.screen == ScreenBook {
-			baseView = a.bookList.View()
-		} else if a.screen == ScreenChapter {
-			baseView = a.chapterList.View()
-		}
-		overlay := lipgloss.Place(a.width-8, a.height-8, lipgloss.Center, lipgloss.Center, a.inputOverlay.View())
-		content = baseView + "\n" + overlay
+		content = lipgloss.Place(a.width-8, a.height-8, lipgloss.Center, lipgloss.Center, a.inputOverlay.View())
 	case ScreenConfirmDelete:
-		baseView := a.libraryList.View()
-		if a.currentBook != nil {
-			baseView = a.bookList.View()
-		}
-		overlay := lipgloss.Place(a.width-8, a.height-8, lipgloss.Center, lipgloss.Center, a.confirmDialog.View())
-		content = baseView + "\n" + overlay
+		content = lipgloss.Place(a.width-8, a.height-8, lipgloss.Center, lipgloss.Center, a.confirmDialog.View())
 	}
 
 	header := renderHeader(a.getCurrentBreadcrumb(), a.width, a.locked)
@@ -698,6 +693,16 @@ func (a *App) popScreen() {
 		a.prevScreens = a.prevScreens[:len(a.prevScreens)-1]
 	} else {
 		a.screen = ScreenLibrary
+	}
+	if a.screen == ScreenLibrary {
+		a.currentBook = nil
+		a.currentChapter = nil
+		a.currentNote = nil
+		a.libraryList.Refresh()
+	} else if a.screen == ScreenBook {
+		a.currentChapter = nil
+		a.currentNote = nil
+		a.bookList.Refresh()
 	}
 }
 
@@ -741,26 +746,42 @@ func (a *App) buildSearchIndex() {
 }
 
 func (a *App) getCurrentBreadcrumb() string {
-	bc := "Books (D:\\books)"
-	if a.currentBook != nil {
-		bc += " › " + a.currentBook.DisplayName
+	switch a.screen {
+	case ScreenLibrary:
+		return "Books (D:\\books)"
+	case ScreenBook:
+		if a.currentBook != nil {
+			return fmt.Sprintf("Books (D:\\books) › %s", a.currentBook.DisplayName)
+		}
+		return "Books (D:\\books)"
+	case ScreenNoteEdit, ScreenNoteView:
+		bc := "Books (D:\\books)"
+		if a.currentBook != nil {
+			bc += " › " + a.currentBook.DisplayName
+		}
+		if a.currentChapter != nil {
+			bc += " › " + a.currentChapter.Title + " (.vault)"
+		}
+		return bc
+	default:
+		bc := "Books (D:\\books)"
+		if a.currentBook != nil {
+			bc += " › " + a.currentBook.DisplayName
+		}
+		if a.currentChapter != nil {
+			bc += " › " + a.currentChapter.Title + " (.vault)"
+		}
+		return bc
 	}
-	if a.currentChapter != nil {
-		bc += " › " + a.currentChapter.Title + " (.vault)"
-	}
-	if a.currentNote != nil {
-		bc += " › " + a.currentNote.Title
-	}
-	return bc
 }
 
 func (a *App) getFooterHints() []KeyHint {
 	switch a.screen {
 	case ScreenLibrary:
 		return []KeyHint{
-			{Key: "↑/↓", Description: "Select Book"},
-			{Key: "Enter", Description: "Open"},
-			{Key: "N", Description: "New Book"},
+			{Key: "←/→ or ↑/↓", Description: "Browse Books"},
+			{Key: "Enter", Description: "Open Book"},
+			{Key: "Ctrl+N / N", Description: "New Book"},
 			{Key: "D", Description: "Delete"},
 			{Key: "S", Description: "Sort"},
 			{Key: "/", Description: "Search"},
@@ -769,28 +790,26 @@ func (a *App) getFooterHints() []KeyHint {
 		}
 	case ScreenBook:
 		return []KeyHint{
-			{Key: "↑/↓", Description: "Select Vault"},
-			{Key: "Enter", Description: "Open Vault"},
-			{Key: "N", Description: "New Vault"},
+			{Key: "←/→ or ↑/↓", Description: "Browse Vaults"},
+			{Key: "Enter / E", Description: "Write Notes in Vault"},
+			{Key: "Ctrl+N / N", Description: "New Vault"},
 			{Key: "D", Description: "Delete"},
 			{Key: "Esc", Description: "Back to Books"},
 		}
-	case ScreenChapter:
+	case ScreenNewItem:
 		return []KeyHint{
-			{Key: "↑/↓", Description: "Select Note"},
-			{Key: "Enter", Description: "View Note"},
-			{Key: "E", Description: "Edit"},
-			{Key: "N", Description: "New Note"},
-			{Key: "P", Description: "Pin"},
-			{Key: "Esc", Description: "Back to Vaults"},
+			{Key: "Enter", Description: "Confirm & Create"},
+			{Key: "Esc", Description: "Cancel"},
 		}
-	case ScreenNoteView:
+	case ScreenRename:
 		return []KeyHint{
-			{Key: "E", Description: "Edit Note"},
-			{Key: "Ctrl+G", Description: "AI Refine"},
-			{Key: "Tab", Description: "Cycle Links"},
-			{Key: "P", Description: "Pin"},
-			{Key: "Esc", Description: "Back"},
+			{Key: "Enter", Description: "Confirm Rename"},
+			{Key: "Esc", Description: "Cancel"},
+		}
+	case ScreenConfirmDelete:
+		return []KeyHint{
+			{Key: "Y", Description: "Yes, Delete"},
+			{Key: "N / Esc", Description: "Cancel"},
 		}
 	case ScreenNoteEdit:
 		return []KeyHint{
@@ -798,7 +817,7 @@ func (a *App) getFooterHints() []KeyHint {
 			{Key: "Ctrl+F", Description: "Format"},
 			{Key: "Ctrl+G", Description: "AI Refine"},
 			{Key: "Ctrl+S", Description: "Snapshot"},
-			{Key: "Esc", Description: "Save & Exit"},
+			{Key: "Esc", Description: "Save & Exit to Vaults"},
 		}
 	case ScreenSearch:
 		return []KeyHint{

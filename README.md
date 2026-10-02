@@ -4,46 +4,26 @@
 
 ---
 
-## 💡 Mental Model: What is a Book, Vault File, and Note?
+## 💡 Streamlined Architecture: Book ➜ Vaults (Side-wise)
 
-To keep your notes clean and organized, Kosha uses a clear three-tier hierarchy:
+Kosha simplifies your notes workflow into a fast, direct structure:
 
-1. **📚 BOOK (Directory on Disk)**
-   - A folder directly inside `D:\books\` (e.g. `D:\books\algorithms\`).
-   - Represents a notebook, subject, or project.
-   - Contains its own individual encrypted `.vault` files and metadata.
+1. **📚 BOOK (Shelf of Projects in `D:\books\`)**
+   - Each book is a dedicated folder inside `D:\books\<book-slug>\` (e.g. `D:\books\operating-systems\`).
+   - Lined up side-by-side with neat, compact 3D ASCII book cards.
 
-2. **🔐 VAULT FILE / CHAPTER (`.vault` File)**
-   - An individual encrypted binary file inside a book (e.g. `D:\books\algorithms\01J9X4...vault`).
-   - The chapter title and all content inside are 100% encrypted. Opening it in Notepad shows only binary gibberish.
-
-3. **📝 NOTE (Page / Entry)**
-   - An entry stored inside the vault file with a title, formatted body, timestamps, pin status, and tags.
+2. **🔐 VAULT SECTIONS (Encrypted Chapters inside the Book)**
+   - Inside any book, your **Vaults are lined up side-wise** (`vault1`, `vault2`, `vault3`...) with matching 3D ASCII vault cards.
+   - Each `.vault` file is an encrypted chapter (`<ulid>.vault`) where you write your notes directly.
+   - **No separate intermediate notes layer**: selecting a vault and pressing `Enter` or `E` opens the coding editor immediately so you can write and organize notes inside that vault right away!
 
 ---
 
-## 🚀 Universal Access
-
-Kosha is installed universally on your machine:
-```bash
-go install ./cmd/kosha
-```
-Because `C:\Users\<user>\go\bin` is in your PATH, you can open a terminal in **any folder or drive** and simply run:
-```bash
-kosha vault      # Opens the book selector
-# or
-kosha            # Launches Kosha library
-```
-
-All data is safely persisted in one single place:
-**`D:\books\`** (individual book folders containing their own vault files).
-
----
-
-## 🎨 Terminal Book Aesthetic & Pitch-Black Developer Theme
+## 🎨 Compact ASCII Art & Pitch-Black Developer Theme
 
 - **Pure Pitch Black (`#000000`)**: Zero murky blues/purples. Minimalist, high-contrast aesthetic across all screens.
-- **ASCII Art Book Shapes (`kosha vault`)**: Realistic physical terminal book shapes with your custom title emblazoned directly on the book spine and cover, with book metadata clearly displayed underneath.
+- **Compact 3D ASCII Book & Vault Cards**: Neat, matching 24x7 terminal cards lined up horizontally side-wise with sliding navigation (`◀◀ [1 of 4] ▶▶`).
+- **Live Vault Preview**: Selecting any vault immediately displays an encrypted file summary and a live text preview of the notes written inside it.
 - **Coding Text Editor**: Clean line numbers with vertical dividers, active line highlights, live cursor position, line count, word count, character count, and instant autosave indicators.
 - **Golden Saffron Highlights**: Active selections, book titles, headers, and key markers highlighted in `#F5A623`.
 - **Zero Green Anywhere**: Strictly respects the saffron, lotus pink, and body text palette.

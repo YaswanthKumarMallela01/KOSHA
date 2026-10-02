@@ -99,7 +99,7 @@ func LoadConfig() (*Config, error) {
 
 	model := os.Getenv("GEMINI_MODEL")
 	if model == "" {
-		model = "gemini-2.0-flash"
+		model = "models/gemini-flash-latest"
 	}
 	cfg.GeminiModel = model
 

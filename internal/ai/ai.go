@@ -120,7 +120,8 @@ func (c *Client) RefineBlocks(ctx context.Context, blocks []BlockRequest) ([]Blo
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", c.model, c.apiKey)
+	cleanModel := strings.TrimPrefix(c.model, "models/")
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", cleanModel, c.apiKey)
 
 	var resp *http.Response
 	for retries := 0; retries < 2; retries++ {
