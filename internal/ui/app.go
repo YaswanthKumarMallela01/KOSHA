@@ -1,0 +1,783 @@
+package ui
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+
+	"github.com/YaswanthKumarMallela01/kosha/internal/ai"
+	"github.com/YaswanthKumarMallela01/kosha/internal/config"
+	"github.com/YaswanthKumarMallela01/kosha/internal/editor"
+	"github.com/YaswanthKumarMallela01/kosha/internal/markup"
+	"github.com/YaswanthKumarMallela01/kosha/internal/model"
+	"github.com/YaswanthKumarMallela01/kosha/internal/search"
+	"github.com/YaswanthKumarMallela01/kosha/internal/store"
+)
+
+type Screen int
+
+const (
+	ScreenPassphrase Screen = iota
+	ScreenLibrary
+	ScreenBook
+	ScreenChapter
+	ScreenNoteView
+	ScreenNoteEdit
+	ScreenSearch
+	ScreenDiffReview
+	ScreenSnapshots
+	ScreenHelp
+	ScreenTagFilter
+	ScreenInit
+	ScreenConfirmDelete
+	ScreenRename
+	ScreenNewItem
+	ScreenLinkPicker
+)
+
+type aiDiffResultMsg struct {
+	diffs []ai.DiffBlock
+}
+
+type aiErrorMsg struct {
+	err error
+}
+
+type App struct {
+	screen         Screen
+	prevScreens    []Screen
+	library        *store.Library
+	config         *config.Config
+	searchIndex    *search.Index
+	width, height  int
+	currentBook    *model.Book
+	currentChapter *model.Chapter
+	currentNote    *model.Note
+
+	passphrase    PassphraseModel
+	libraryList   LibraryModel
+	bookList      BookModel
+	chapterList   ChapterModel
+	noteView      NoteViewModel
+	editorModel   editor.Model
+	searchModel   SearchModel
+	diffModel     DiffReviewModel
+	snapshotModel SnapshotModel
+	tagModel      TagFilterModel
+	inputOverlay  InputOverlayModel
+	confirmDialog ConfirmDialogModel
+
+	statusMsg     string
+	statusTimer   int
+	err           error
+	lastActivity  time.Time
+	locked        bool
+	lockMinutes   int
+	ascending     bool
+	resurfaceNote *store.NoteRef
+	aiClient      *ai.Client
+	aiProcessing  bool
+	showHelp      bool
+	theme         *markup.Theme
+}
+
+func NewApp(cfg *config.Config, lib *store.Library, idx *search.Index, aiCli *ai.Client) *App {
+	a := &App{
+		screen:       ScreenLibrary,
+		library:      lib,
+		config:       cfg,
+		searchIndex:  idx,
+		aiClient:     aiCli,
+		lastActivity: time.Now(),
+		lockMinutes:  cfg.LockMinutes,
+		theme:        markup.NewDefaultTheme(),
+	}
+
+	a.passphrase = NewPassphraseModel()
+	a.passphrase.app = a
+	a.libraryList = NewLibraryModel(a)
+	a.bookList = NewBookModel(a)
+	a.chapterList = NewChapterModel(a)
+	a.noteView = NewNoteViewModel(a)
+	a.searchModel = NewSearchModel(a)
+	a.diffModel = NewDiffReviewModel(a)
+	a.snapshotModel = NewSnapshotModel(a)
+	a.tagModel = NewTagFilterModel(a)
+	a.inputOverlay = NewInputOverlayModel()
+	a.confirmDialog = NewConfirmDialogModel()
+
+	// Initial data population
+	a.libraryList.Refresh()
+	a.resurfaceNote = a.library.GetRandomOldNote(7 * 24 * time.Hour)
+	a.buildSearchIndex()
+
+	return a
+}
+
+func (a *App) Init() tea.Cmd {
+	return tea.Batch(
+		textinput.Blink,
+		tea.Tick(time.Minute, func(t time.Time) tea.Msg {
+			return tickMsg(t)
+		}),
+	)
+}
+
+type tickMsg time.Time
+
+func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	var cmds []tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		a.lastActivity = time.Now()
+		a.statusMsg = "" // clear status on key press
+
+		if msg.String() == "ctrl+c" {
+			// Save active note if in editor before exit
+			if a.screen == ScreenNoteEdit && a.currentNote != nil && a.currentChapter != nil {
+				a.currentNote.Body = a.editorModel.Content()
+				a.currentNote.UpdatedAt = time.Now()
+				_ = a.library.SaveChapter(a.currentBook.Slug, a.currentChapter)
+			}
+			return a, tea.Quit
+		}
+
+		if msg.String() == "ctrl+l" && !a.locked {
+			a.lock()
+			return a, nil
+		}
+
+		if msg.String() == "?" && !a.locked && a.screen != ScreenNoteEdit {
+			a.showHelp = !a.showHelp
+			return a, nil
+		}
+
+		if a.showHelp {
+			if msg.String() == "esc" || msg.String() == "?" || msg.String() == "q" {
+				a.showHelp = false
+				return a, nil
+			}
+			return a, nil
+		}
+
+	case tea.WindowSizeMsg:
+		a.width = msg.Width
+		a.height = msg.Height
+		a.libraryList.SetSize(a.width, a.height)
+		a.bookList.SetSize(a.width, a.height)
+		a.chapterList.SetSize(a.width, a.height)
+		a.noteView.SetSize(a.width, a.height)
+		a.searchModel.SetSize(a.width, a.height)
+		a.snapshotModel.SetSize(a.width, a.height)
+		a.tagModel.SetSize(a.width, a.height)
+		a.editorModel.SetSize(a.width-8, a.height-6)
+
+	case tickMsg:
+		if a.lockMinutes > 0 && !a.locked && time.Since(a.lastActivity) > time.Duration(a.lockMinutes)*time.Minute {
+			a.lock()
+		}
+		cmds = append(cmds, tea.Tick(time.Minute, func(t time.Time) tea.Msg {
+			return tickMsg(t)
+		}))
+
+	case aiDiffResultMsg:
+		a.aiProcessing = false
+		a.statusMsg = "AI review ready"
+		a.diffModel.SetBlocks(msg.diffs)
+		a.pushScreen(ScreenDiffReview)
+		return a, nil
+
+	case aiErrorMsg:
+		a.aiProcessing = false
+		a.statusMsg = fmt.Sprintf("AI error: %v", msg.err)
+		return a, nil
+	}
+
+	if a.locked {
+		var pCmd tea.Cmd
+		a.passphrase, pCmd = a.passphrase.Update(msg)
+		return a, pCmd
+	}
+
+	// Route based on screen
+	switch a.screen {
+	case ScreenLibrary:
+		a.libraryList, cmd = a.libraryList.Update(msg)
+	case ScreenBook:
+		a.bookList, cmd = a.bookList.Update(msg)
+	case ScreenChapter:
+		a.chapterList, cmd = a.chapterList.Update(msg)
+	case ScreenNoteView:
+		a.noteView, cmd = a.noteView.Update(msg)
+	case ScreenNoteEdit:
+		cmd = a.updateEditor(msg)
+	case ScreenSearch:
+		a.searchModel, cmd = a.searchModel.Update(msg)
+	case ScreenDiffReview:
+		a.diffModel, cmd = a.diffModel.Update(msg)
+	case ScreenSnapshots:
+		a.snapshotModel, cmd = a.snapshotModel.Update(msg)
+	case ScreenTagFilter:
+		a.tagModel, cmd = a.tagModel.Update(msg)
+	case ScreenNewItem:
+		cmd = a.updateNewItem(msg)
+	case ScreenRename:
+		cmd = a.updateRename(msg)
+	case ScreenConfirmDelete:
+		cmd = a.updateConfirmDelete(msg)
+	}
+
+	cmds = append(cmds, cmd)
+	return a, tea.Batch(cmds...)
+}
+
+func (a *App) updateEditor(msg tea.Msg) tea.Cmd {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch keyMsg.String() {
+		case "esc":
+			// Save and return to NoteView
+			if a.currentNote != nil && a.currentChapter != nil {
+				a.currentNote.Body = a.editorModel.Content()
+				a.currentNote.UpdatedAt = time.Now()
+				_ = a.library.SaveChapter(a.currentBook.Slug, a.currentChapter)
+				a.buildSearchIndex()
+				a.noteView.Refresh()
+			}
+			a.screen = ScreenNoteView
+			return nil
+		case "ctrl+g":
+			a.triggerAIRefine()
+			return nil
+		case "ctrl+s":
+			if a.currentBook != nil && a.currentChapter != nil {
+				_ = a.library.CreateSnapshot(a.currentBook.Slug, a.currentChapter.ID)
+				a.statusMsg = "Chapter snapshot saved"
+			}
+			return nil
+		}
+	}
+
+	var edModel tea.Model
+	var edCmd tea.Cmd
+	edModel, edCmd = a.editorModel.Update(msg)
+	if em, ok := edModel.(editor.Model); ok {
+		a.editorModel = em
+	}
+	return edCmd
+}
+
+func (a *App) updateNewItem(msg tea.Msg) tea.Cmd {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch keyMsg.String() {
+		case "enter":
+			val := strings.TrimSpace(a.inputOverlay.Input.Value())
+			if val == "" {
+				a.popScreen()
+				return nil
+			}
+			switch a.inputOverlay.Action {
+			case "new_book":
+				b, err := a.library.CreateBook(val)
+				if err == nil && b != nil {
+					a.currentBook = b
+					a.libraryList.Refresh()
+					a.bookList.Refresh()
+					a.screen = ScreenBook
+					a.statusMsg = "Book created: " + b.DisplayName
+				}
+			case "new_chapter":
+				ch, err := a.library.CreateChapter(a.currentBook.Slug, val)
+				if err == nil && ch != nil {
+					a.currentChapter = ch
+					a.bookList.Refresh()
+					a.chapterList.Refresh()
+					a.screen = ScreenChapter
+					a.statusMsg = "Chapter created: " + ch.Title
+				}
+			case "new_note":
+				note := &model.Note{
+					ID:        model.NewID(),
+					Title:     val,
+					Body:      "",
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				}
+				_ = a.library.AddNote(a.currentBook.Slug, a.currentChapter.ID, note)
+				a.currentNote = note
+				a.chapterList.Refresh()
+				a.openEditor(note)
+				a.statusMsg = "Note created: " + note.Title
+			}
+			a.inputOverlay.Close()
+			return nil
+		case "esc":
+			a.inputOverlay.Close()
+			a.popScreen()
+			return nil
+		}
+	}
+
+	var cmd tea.Cmd
+	a.inputOverlay, cmd = a.inputOverlay.Update(msg)
+	return cmd
+}
+
+func (a *App) updateRename(msg tea.Msg) tea.Cmd {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch keyMsg.String() {
+		case "enter":
+			val := strings.TrimSpace(a.inputOverlay.Input.Value())
+			if val != "" {
+				switch a.inputOverlay.Action {
+				case "rename_book":
+					_ = a.library.RenameBook(a.inputOverlay.TargetID, val)
+					a.libraryList.Refresh()
+					a.statusMsg = "Book renamed"
+				case "rename_chapter":
+					_ = a.library.RenameChapter(a.currentBook.Slug, a.inputOverlay.TargetID, val)
+					a.bookList.Refresh()
+					a.statusMsg = "Chapter renamed"
+				case "rename_note":
+					if a.currentNote != nil {
+						a.currentNote.Title = val
+						a.currentNote.UpdatedAt = time.Now()
+						_ = a.library.UpdateNote(a.currentBook.Slug, a.currentChapter.ID, a.currentNote)
+						a.chapterList.Refresh()
+						a.statusMsg = "Note renamed"
+					}
+				}
+			}
+			a.inputOverlay.Close()
+			a.popScreen()
+			return nil
+		case "esc":
+			a.inputOverlay.Close()
+			a.popScreen()
+			return nil
+		}
+	}
+
+	var cmd tea.Cmd
+	a.inputOverlay, cmd = a.inputOverlay.Update(msg)
+	return cmd
+}
+
+func (a *App) updateConfirmDelete(msg tea.Msg) tea.Cmd {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch keyMsg.String() {
+		case "y", "Y":
+			switch a.confirmDialog.Action {
+			case "delete_book":
+				_ = a.library.DeleteBook(a.confirmDialog.TargetID)
+				a.libraryList.Refresh()
+				a.statusMsg = "Book deleted"
+			case "delete_chapter":
+				_ = a.library.DeleteChapter(a.currentBook.Slug, a.confirmDialog.TargetID)
+				a.bookList.Refresh()
+				a.statusMsg = "Chapter deleted"
+			case "delete_note":
+				_ = a.library.DeleteNote(a.currentBook.Slug, a.currentChapter.ID, a.confirmDialog.TargetID)
+				a.chapterList.Refresh()
+				a.statusMsg = "Note deleted"
+			}
+			a.confirmDialog.Close()
+			a.popScreen()
+			return nil
+		case "n", "N", "esc":
+			a.confirmDialog.Close()
+			a.popScreen()
+			return nil
+		}
+	}
+	return nil
+}
+
+func (a *App) openEditor(note *model.Note) {
+	a.currentNote = note
+	a.editorModel = editor.New(note.Body, a.theme)
+	a.editorModel.SetSize(a.width-8, a.height-6)
+	a.editorModel.Focus()
+
+	// Set autosave callback
+	bookSlug := a.currentBook.Slug
+	noteID := note.ID
+	a.editorModel.OnSave = func(content string) {
+		if a.currentChapter != nil {
+			for _, n := range a.currentChapter.Notes {
+				if n.ID == noteID {
+					n.Body = content
+					n.UpdatedAt = time.Now()
+					_ = a.library.SaveChapter(bookSlug, a.currentChapter)
+					a.buildSearchIndex()
+					break
+				}
+			}
+		}
+	}
+
+	a.pushScreen(ScreenNoteEdit)
+}
+
+func (a *App) jumpToNote(ref *store.NoteRef) {
+	if ref == nil {
+		return
+	}
+	a.jumpToNoteID(ref.BookSlug, ref.ChapterID, ref.Note.ID)
+}
+
+func (a *App) jumpToNoteID(bookSlug, chapterID, noteID string) {
+	for _, b := range a.library.Books {
+		if b.Slug == bookSlug {
+			a.currentBook = b
+			break
+		}
+	}
+	if a.currentBook == nil {
+		return
+	}
+
+	ch, err := a.library.GetChapter(bookSlug, chapterID)
+	if err != nil || ch == nil {
+		return
+	}
+	a.currentChapter = ch
+
+	for _, n := range ch.Notes {
+		if n.ID == noteID {
+			a.currentNote = n
+			a.noteView.Refresh()
+			a.pushScreen(ScreenNoteView)
+			return
+		}
+	}
+}
+
+func (a *App) exportBook(slug string) {
+	chapters, err := a.library.LoadChapters(slug)
+	if err != nil {
+		a.statusMsg = fmt.Sprintf("Export error: %v", err)
+		return
+	}
+
+	outDir := filepath.Join(".", slug+"_export")
+	_ = os.MkdirAll(outDir, 0700)
+	count := 0
+
+	for _, ch := range chapters {
+		for _, note := range ch.Notes {
+			fn := filepath.Join(outDir, fmt.Sprintf("%s_%s.md", ch.Title, note.Title))
+			md := fmt.Sprintf("# %s\n\n%s\n", note.Title, markup.RenderToMarkdown(note.Body))
+			_ = os.WriteFile(fn, []byte(md), 0600)
+			count++
+		}
+	}
+	a.statusMsg = fmt.Sprintf("Exported %d notes to %s", count, outDir)
+}
+
+func (a *App) exportChapter(slug, chapterTitle string) {
+	outDir := filepath.Join(".", slug+"_export")
+	_ = os.MkdirAll(outDir, 0700)
+	count := 0
+
+	if a.currentChapter != nil {
+		for _, note := range a.currentChapter.Notes {
+			fn := filepath.Join(outDir, fmt.Sprintf("%s_%s.md", chapterTitle, note.Title))
+			md := fmt.Sprintf("# %s\n\n%s\n", note.Title, markup.RenderToMarkdown(note.Body))
+			_ = os.WriteFile(fn, []byte(md), 0600)
+			count++
+		}
+	}
+	a.statusMsg = fmt.Sprintf("Exported %d notes to %s", count, outDir)
+}
+
+func (a *App) exportCurrentNote() {
+	if a.currentNote == nil {
+		return
+	}
+	fn := fmt.Sprintf("%s.md", a.currentNote.Title)
+	md := fmt.Sprintf("# %s\n\n%s\n", a.currentNote.Title, markup.RenderToMarkdown(a.currentNote.Body))
+	_ = os.WriteFile(fn, []byte(md), 0600)
+	a.statusMsg = fmt.Sprintf("Exported note to %s", fn)
+}
+
+func (a *App) triggerAIRefine() {
+	if a.currentNote == nil || a.currentChapter == nil {
+		return
+	}
+
+	if a.aiClient == nil {
+		a.statusMsg = "Gemini API key not set (add GEMINI_API_KEY to .env)"
+		return
+	}
+
+	// 1. Split body into blocks
+	blocks := model.SplitBlocks(a.currentNote.Body)
+	if a.currentChapter.ProcessedHashes == nil {
+		a.currentChapter.ProcessedHashes = make(map[string]bool)
+	}
+
+	var dirtyBlocks []ai.BlockRequest
+	for _, b := range blocks {
+		h := model.HashBlock(b.Text)
+		if !a.currentChapter.ProcessedHashes[h] {
+			dirtyBlocks = append(dirtyBlocks, ai.BlockRequest{
+				ID:   b.ID,
+				Text: b.Text,
+			})
+		}
+	}
+
+	if len(dirtyBlocks) == 0 {
+		a.statusMsg = "Nothing new to refine"
+		return
+	}
+
+	// 2. Create snapshot of chapter first
+	_ = a.library.CreateSnapshot(a.currentBook.Slug, a.currentChapter.ID)
+
+	// 3. Trigger asynchronous AI processing
+	a.aiProcessing = true
+	a.statusMsg = fmt.Sprintf("✦ Refining %d changed block(s) with Gemini...", len(dirtyBlocks))
+
+	client := a.aiClient
+	// Launch background command via goroutine channel
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		resp, err := client.RefineBlocks(ctx, dirtyBlocks)
+		if err != nil {
+			a.err = err
+			a.statusMsg = fmt.Sprintf("AI error: %v", err)
+			a.aiProcessing = false
+			return
+		}
+		diffs := ai.PrepareDiff(dirtyBlocks, resp)
+		a.diffModel.SetBlocks(diffs)
+		a.aiProcessing = false
+		a.pushScreen(ScreenDiffReview)
+	}()
+}
+
+func (a *App) View() string {
+	if a.width < 50 || a.height < 15 {
+		return "Terminal too small. Minimum size: 50x15. Please resize."
+	}
+
+	if a.locked {
+		return a.passphrase.View(a.width, a.height)
+	}
+
+	if a.showHelp {
+		return renderHelpOverlay(a.width, a.height)
+	}
+
+	var content string
+	switch a.screen {
+	case ScreenLibrary:
+		content = a.libraryList.View()
+	case ScreenBook:
+		content = a.bookList.View()
+	case ScreenChapter:
+		content = a.chapterList.View()
+	case ScreenNoteView:
+		content = a.noteView.View()
+	case ScreenNoteEdit:
+		content = a.editorModel.View()
+	case ScreenSearch:
+		content = a.searchModel.View()
+	case ScreenDiffReview:
+		content = a.diffModel.View()
+	case ScreenSnapshots:
+		content = a.snapshotModel.View()
+	case ScreenTagFilter:
+		content = a.tagModel.View()
+	case ScreenNewItem, ScreenRename:
+		baseView := a.libraryList.View()
+		if a.screen == ScreenBook {
+			baseView = a.bookList.View()
+		} else if a.screen == ScreenChapter {
+			baseView = a.chapterList.View()
+		}
+		overlay := lipgloss.Place(a.width-8, a.height-8, lipgloss.Center, lipgloss.Center, a.inputOverlay.View())
+		content = baseView + "\n" + overlay
+	case ScreenConfirmDelete:
+		baseView := a.libraryList.View()
+		if a.currentBook != nil {
+			baseView = a.bookList.View()
+		}
+		overlay := lipgloss.Place(a.width-8, a.height-8, lipgloss.Center, lipgloss.Center, a.confirmDialog.View())
+		content = baseView + "\n" + overlay
+	}
+
+	header := renderHeader("Vault", a.getCurrentBreadcrumb(), a.width, a.locked)
+	footer := renderFooter(a.getFooterHints(), a.statusMsg, a.width)
+
+	h := a.height - lipgloss.Height(header) - lipgloss.Height(footer)
+	if h < 0 {
+		h = 0
+	}
+	panel := renderGlassPanel(content, a.width, h)
+
+	return lipgloss.JoinVertical(lipgloss.Left, header, panel, footer)
+}
+
+func (a *App) pushScreen(s Screen) {
+	a.prevScreens = append(a.prevScreens, a.screen)
+	a.screen = s
+}
+
+func (a *App) popScreen() {
+	if len(a.prevScreens) > 0 {
+		a.screen = a.prevScreens[len(a.prevScreens)-1]
+		a.prevScreens = a.prevScreens[:len(a.prevScreens)-1]
+	} else {
+		a.screen = ScreenLibrary
+	}
+}
+
+func (a *App) lock() {
+	// If in editor, save current note first
+	if a.screen == ScreenNoteEdit && a.currentNote != nil && a.currentChapter != nil {
+		a.currentNote.Body = a.editorModel.Content()
+		a.currentNote.UpdatedAt = time.Now()
+		_ = a.library.SaveChapter(a.currentBook.Slug, a.currentChapter)
+	}
+
+	a.locked = true
+	a.library.Lock()
+	a.screen = ScreenPassphrase
+	a.passphrase.Reset()
+}
+
+func (a *App) buildSearchIndex() {
+	if a.library == nil || a.searchIndex == nil {
+		return
+	}
+
+	allNotes := a.library.GetAllNotes()
+	entries := make([]search.SearchEntry, len(allNotes))
+	for i, ref := range allNotes {
+		tags := model.ExtractTags(ref.Note.Body)
+		entries[i] = search.SearchEntry{
+			BookSlug:     ref.BookSlug,
+			BookName:     ref.BookName,
+			ChapterID:    ref.ChapterID,
+			ChapterTitle: ref.ChapterTitle,
+			NoteID:       ref.Note.ID,
+			NoteTitle:    ref.Note.Title,
+			Body:         markup.StripMarkup(ref.Note.Body),
+			RawBody:      ref.Note.Body,
+			Tags:         tags,
+			Breadcrumb:   fmt.Sprintf("%s › %s › %s", ref.BookName, ref.ChapterTitle, ref.Note.Title),
+		}
+	}
+	a.searchIndex.Build(entries)
+}
+
+func (a *App) getCurrentBreadcrumb() string {
+	bc := "Library"
+	if a.currentBook != nil {
+		bc += " › " + a.currentBook.DisplayName
+	}
+	if a.currentChapter != nil {
+		bc += " › " + a.currentChapter.Title
+	}
+	if a.currentNote != nil {
+		bc += " › " + a.currentNote.Title
+	}
+	return bc
+}
+
+func (a *App) getFooterHints() []KeyHint {
+	switch a.screen {
+	case ScreenLibrary:
+		return []KeyHint{
+			{Key: "j/k", Description: "move"},
+			{Key: "Enter", Description: "open"},
+			{Key: "n", Description: "new book"},
+			{Key: "r", Description: "rename"},
+			{Key: "d", Description: "delete"},
+			{Key: "s", Description: "sort"},
+			{Key: "/", Description: "search"},
+			{Key: "t", Description: "tags"},
+			{Key: "x", Description: "export"},
+			{Key: "R", Description: "resurface"},
+			{Key: "Ctrl+L", Description: "lock"},
+			{Key: "?", Description: "help"},
+			{Key: "q", Description: "quit"},
+		}
+	case ScreenBook:
+		return []KeyHint{
+			{Key: "j/k", Description: "move"},
+			{Key: "Enter", Description: "open chapter"},
+			{Key: "n", Description: "new chapter"},
+			{Key: "r", Description: "rename"},
+			{Key: "d", Description: "delete"},
+			{Key: "s", Description: "sort"},
+			{Key: "x", Description: "export"},
+			{Key: "Esc", Description: "back"},
+		}
+	case ScreenChapter:
+		return []KeyHint{
+			{Key: "j/k", Description: "move"},
+			{Key: "Enter", Description: "view"},
+			{Key: "e", Description: "edit"},
+			{Key: "n", Description: "new note"},
+			{Key: "p", Description: "pin"},
+			{Key: "r", Description: "rename"},
+			{Key: "d", Description: "delete"},
+			{Key: "s", Description: "sort"},
+			{Key: "x", Description: "export"},
+			{Key: "Esc", Description: "back"},
+		}
+	case ScreenNoteView:
+		return []KeyHint{
+			{Key: "e", Description: "edit"},
+			{Key: "Ctrl+G", Description: "AI refine"},
+			{Key: "Tab", Description: "links"},
+			{Key: "Enter", Description: "follow link"},
+			{Key: "p", Description: "pin"},
+			{Key: "x", Description: "export"},
+			{Key: "Esc", Description: "back"},
+		}
+	case ScreenNoteEdit:
+		return []KeyHint{
+			{Key: "Ctrl+R", Description: "preview"},
+			{Key: "Ctrl+F", Description: "format"},
+			{Key: "Ctrl+G", Description: "AI refine"},
+			{Key: "Ctrl+S", Description: "snapshot"},
+			{Key: "Esc", Description: "save & exit"},
+		}
+	case ScreenSearch:
+		return []KeyHint{
+			{Key: "Type", Description: "filter"},
+			{Key: "↑/↓", Description: "select"},
+			{Key: "Enter", Description: "open note"},
+			{Key: "Esc", Description: "back"},
+		}
+	case ScreenDiffReview:
+		return []KeyHint{
+			{Key: "y", Description: "accept"},
+			{Key: "n", Description: "reject"},
+			{Key: "a", Description: "accept all"},
+			{Key: "x", Description: "reject all"},
+			{Key: "k", Description: "keep as-is"},
+			{Key: "Enter", Description: "apply"},
+			{Key: "Esc", Description: "cancel"},
+		}
+	default:
+		return []KeyHint{
+			{Key: "?", Description: "help"},
+			{Key: "Esc", Description: "back"},
+		}
+	}
+}

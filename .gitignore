@@ -1,0 +1,15 @@
+# Kosha vault data and keys
+.env
+*.vault
+*.vault.tmp
+*.vault.bak
+.kosha/
+
+# Go build
+/kosha
+/kosha.exe
+/bin/
+
+# OS
+.DS_Store
+Thumbs.db
