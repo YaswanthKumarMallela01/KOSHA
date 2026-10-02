@@ -614,23 +614,25 @@ func (a *App) triggerAIRefine() tea.Cmd {
 		_ = a.library.SaveChapter(a.currentBook.Slug, a.currentChapter)
 	}
 
-	// 2. Ensure aiClient is available (check env if not set)
-	if a.aiClient == nil {
-		apiKey := os.Getenv("GEMINI_API_KEY")
-		if apiKey == "" && a.config != nil {
-			apiKey = a.config.GeminiAPIKey
-		}
-		if apiKey != "" {
-			modelName := "gemini-2.0-flash"
-			if a.config != nil && a.config.GeminiModel != "" {
-				modelName = a.config.GeminiModel
-			}
-			a.aiClient = ai.NewClient(apiKey, modelName)
-		}
+	// 2. Always reload env and rebuild AI client with latest model & key from .env
+	config.LoadEnv()
+	apiKey := os.Getenv("GEMINI_API_KEY")
+	if apiKey == "" && a.config != nil {
+		apiKey = a.config.GeminiAPIKey
+	}
+	modelName := os.Getenv("GEMINI_MODEL")
+	if modelName == "" && a.config != nil && a.config.GeminiModel != "" {
+		modelName = a.config.GeminiModel
+	}
+	if modelName == "" {
+		modelName = "gemini-3.8-flash"
+	}
+	if apiKey != "" {
+		a.aiClient = ai.NewClient(apiKey, modelName)
 	}
 
 	if a.aiClient == nil {
-		a.statusMsg = "Gemini API key not found. Set GEMINI_API_KEY environment variable."
+		a.statusMsg = "Gemini API key not found. Set GEMINI_API_KEY in .env or environment."
 		return nil
 	}
 

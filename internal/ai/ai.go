@@ -92,24 +92,13 @@ func (c *Client) RefineBlocks(ctx context.Context, blocks []BlockRequest) ([]Blo
 		return nil, fmt.Errorf("failed to marshal blocks: %w", err)
 	}
 
-	reqBody := geminiRequest{
-		SystemInstruction: systemInstruction{
-			Parts: []part{{Text: SystemInstruction}},
-		},
-		Contents: []content{
-			{Parts: []part{{Text: string(blocksJSON)}}},
-		},
-		GenerationConfig: generationConfig{
-			ResponseMimeType: "application/json",
-			ResponseSchema: responseSchema{
-				Type: "ARRAY",
-				Items: &responseSchemaItems{
-					Type: "OBJECT",
-					Properties: map[string]responseSchema{
-						"id":   {Type: "STRING"},
-						"text": {Type: "STRING"},
-					},
-					Required: []string{"id", "text"},
+	promptText := fmt.Sprintf("%s\n\nJSON array of text blocks to refine:\n%s", SystemInstruction, string(blocksJSON))
+
+	reqBody := map[string]interface{}{
+		"contents": []map[string]interface{}{
+			{
+				"parts": []map[string]interface{}{
+					{"text": promptText},
 				},
 			},
 		},
@@ -124,7 +113,8 @@ func (c *Client) RefineBlocks(ctx context.Context, blocks []BlockRequest) ([]Blo
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", cleanModel, c.apiKey)
 
 	var resp *http.Response
-	for retries := 0; retries < 2; retries++ {
+	var lastErr error
+	for retries := 0; retries < 3; retries++ {
 		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(reqJSON))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create http request: %w", err)
@@ -133,13 +123,15 @@ func (c *Client) RefineBlocks(ctx context.Context, blocks []BlockRequest) ([]Blo
 
 		resp, err = c.httpClient.Do(httpReq)
 		if err != nil {
-			return nil, fmt.Errorf("http request failed: %w", err)
+			lastErr = err
+			time.Sleep(time.Duration(1<<retries) * time.Second)
+			continue
 		}
 
-		if resp.StatusCode == 429 && retries == 0 {
+		if (resp.StatusCode == 429 || resp.StatusCode == 503) && retries < 2 {
 			resp.Body.Close()
 			select {
-			case <-time.After(2 * time.Second):
+			case <-time.After(time.Duration(1<<retries) * time.Second):
 				continue
 			case <-ctx.Done():
 				return nil, ctx.Err()
@@ -147,11 +139,15 @@ func (c *Client) RefineBlocks(ctx context.Context, blocks []BlockRequest) ([]Blo
 		}
 		break
 	}
+
+	if resp == nil {
+		return nil, fmt.Errorf("http request failed after retries: %w", lastErr)
+	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API error: status=%d body=%s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
 	}
 
 	var geminiResp geminiResponse
@@ -163,7 +159,20 @@ func (c *Client) RefineBlocks(ctx context.Context, blocks []BlockRequest) ([]Blo
 		return nil, errors.New("empty response from model")
 	}
 
-	respText := geminiResp.Candidates[0].Content.Parts[0].Text
+	respText := strings.TrimSpace(geminiResp.Candidates[0].Content.Parts[0].Text)
+	// Strip markdown code fences if model wrapped response in ```json ... ```
+	if strings.HasPrefix(respText, "```") {
+		lines := strings.Split(respText, "\n")
+		if len(lines) >= 2 {
+			if strings.HasPrefix(lines[len(lines)-1], "```") {
+				lines = lines[1 : len(lines)-1]
+			} else {
+				lines = lines[1:]
+			}
+			respText = strings.TrimSpace(strings.Join(lines, "\n"))
+		}
+	}
+
 	var blockResponses []BlockResponse
 	if err := json.Unmarshal([]byte(respText), &blockResponses); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal JSON response from model: %w", err)
