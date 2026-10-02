@@ -40,12 +40,14 @@ All data is safely persisted in one single place:
 
 ---
 
-## 🎨 Pitch-Black Developer Theme
+## 🎨 Terminal Book Aesthetic & Pitch-Black Developer Theme
 
-- **Pure Pitch Black (`#000000`)**: Zero murky blues/purples. Minimalist, high-contrast hacker aesthetic.
-- **Coding Book Symbols**: Clean ASCII/Unicode cards (`📚 BOOK`, `🔐 VAULT FILE`, `📝 NOTE`, `├──`, `└──`).
-- **Golden Saffron Highlights**: Active items, headers, and key markers highlighted in `#F5A623`.
-- **Zero Overflow / Zero Duplicate Footers**: Clean, single-line footer hints with `↑/↓` arrow key navigation.
+- **Pure Pitch Black (`#000000`)**: Zero murky blues/purples. Minimalist, high-contrast aesthetic across all screens.
+- **ASCII Art Book Shapes (`kosha vault`)**: Realistic physical terminal book shapes with your custom title emblazoned directly on the book spine and cover, with book metadata clearly displayed underneath.
+- **Coding Text Editor**: Clean line numbers with vertical dividers, active line highlights, live cursor position, line count, word count, character count, and instant autosave indicators.
+- **Golden Saffron Highlights**: Active selections, book titles, headers, and key markers highlighted in `#F5A623`.
+- **Zero Green Anywhere**: Strictly respects the saffron, lotus pink, and body text palette.
+- **Zero Terminal Scrolling**: Auto-clamped layouts prevent duplicate footers or screen tearing on Windows Terminal.
 
 ---
 
@@ -63,13 +65,13 @@ All data is safely persisted in one single place:
 - **`q`**: Quit application (from library screen)
 
 ### Book & Vault Management
-- **`n`**: Create a new Book (on Library screen) or new Vault File (inside a Book) or new Note (inside a Vault)
+- **`Ctrl+N` or `n` / `N`**: Create a new Book (on Library screen) or new Vault File (inside a Book) or new Note (inside a Vault)
 - **`r`**: Rename selected Book, Vault, or Note
 - **`d`**: Delete selected item (with confirmation prompt)
 - **`p`**: Pin / unpin note to top of chapter
 - **`x`**: Export decrypted content to standard Markdown files
 
-### Editor Mode
+### Coding Editor Mode
 - **Arrow keys**: Move cursor
 - **Shift + Arrows**: Select text
 - **Ctrl + Left/Right**: Jump by word
@@ -77,7 +79,7 @@ All data is safely persisted in one single place:
 - **Ctrl + C / X / V**: Copy / Cut / Paste
 - **Ctrl + R**: Toggle between Edit mode and formatted Preview mode
 - **Ctrl + F**: Open formatting toolbar
-- **Ctrl + G**: Run Gemini AI grammar & sparse highlight refinement
+- **Ctrl + G**: Run Gemini AI copy-editor & sparse highlight refinement (syncs active buffer)
 - **Ctrl + S**: Save manual snapshot of vault file
 - **Esc**: Save note and exit back to reading view
 

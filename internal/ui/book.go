@@ -92,8 +92,8 @@ func (m BookModel) Update(msg tea.Msg) (BookModel, tea.Cmd) {
 					return m, nil
 				}
 			}
-		case "n":
-			m.app.inputOverlay.Open("Create New Chapter / Vault File in this book:", "", "new_chapter", "")
+		case "ctrl+n", "n", "N":
+			m.app.inputOverlay.Open("Create New Vault Section / Chapter in this book:", "", "new_chapter", "")
 			m.app.pushScreen(ScreenNewItem)
 		case "r":
 			if sel := m.list.SelectedItem(); sel != nil {

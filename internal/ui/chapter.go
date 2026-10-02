@@ -102,7 +102,7 @@ func (m ChapterModel) Update(msg tea.Msg) (ChapterModel, tea.Cmd) {
 					}
 				}
 			}
-		case "n":
+		case "ctrl+n", "n", "N":
 			m.app.inputOverlay.Open("Enter Title for New Note in this Vault:", "", "new_note", "")
 			m.app.pushScreen(ScreenNewItem)
 		case "p":

@@ -169,6 +169,22 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 
+		if msg.String() == "ctrl+n" && a.screen != ScreenNoteEdit {
+			if a.screen == ScreenLibrary {
+				a.inputOverlay.Open("Create New Book in D:\\books (e.g. Operating Systems):", "", "new_book", "")
+				a.pushScreen(ScreenNewItem)
+				return a, nil
+			} else if a.screen == ScreenBook {
+				a.inputOverlay.Open("Create New Vault Section in this book (e.g. Memory Management):", "", "new_chapter", "")
+				a.pushScreen(ScreenNewItem)
+				return a, nil
+			} else if a.screen == ScreenChapter {
+				a.inputOverlay.Open("Enter Title for New Note in this Vault:", "", "new_note", "")
+				a.pushScreen(ScreenNewItem)
+				return a, nil
+			}
+		}
+
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
@@ -191,14 +207,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case aiDiffResultMsg:
 		a.aiProcessing = false
-		a.statusMsg = "AI review ready"
+		a.statusMsg = "AI refinement complete. Reviewing changes..."
 		a.diffModel.SetBlocks(msg.diffs)
 		a.pushScreen(ScreenDiffReview)
 		return a, nil
 
 	case aiErrorMsg:
 		a.aiProcessing = false
-		a.statusMsg = fmt.Sprintf("AI error: %v", msg.err)
+		errStr := msg.err.Error()
+		if strings.Contains(errStr, "429") {
+			a.statusMsg = "Gemini Quota Exceeded (429): API limit reached for your region/key. Verify in Google AI Studio."
+		} else {
+			a.statusMsg = fmt.Sprintf("AI error: %v", msg.err)
+		}
 		return a, nil
 	}
 
@@ -255,8 +276,7 @@ func (a *App) updateEditor(msg tea.Msg) tea.Cmd {
 			a.screen = ScreenNoteView
 			return nil
 		case "ctrl+g":
-			a.triggerAIRefine()
-			return nil
+			return a.triggerAIRefine()
 		case "ctrl+s":
 			if a.currentBook != nil && a.currentChapter != nil {
 				_ = a.library.CreateSnapshot(a.currentBook.Slug, a.currentChapter.ID)
@@ -509,18 +529,45 @@ func (a *App) exportCurrentNote() {
 	a.statusMsg = fmt.Sprintf("Exported note to %s", fn)
 }
 
-func (a *App) triggerAIRefine() {
+func (a *App) triggerAIRefine() tea.Cmd {
 	if a.currentNote == nil || a.currentChapter == nil {
-		return
+		return nil
+	}
+
+	// 1. Sync latest text from editor
+	if a.screen == ScreenNoteEdit {
+		a.currentNote.Body = a.editorModel.Content()
+		a.currentNote.UpdatedAt = time.Now()
+		_ = a.library.SaveChapter(a.currentBook.Slug, a.currentChapter)
+	}
+
+	// 2. Ensure aiClient is available (check env if not set)
+	if a.aiClient == nil {
+		apiKey := os.Getenv("GEMINI_API_KEY")
+		if apiKey == "" && a.config != nil {
+			apiKey = a.config.GeminiAPIKey
+		}
+		if apiKey != "" {
+			modelName := "gemini-2.0-flash"
+			if a.config != nil && a.config.GeminiModel != "" {
+				modelName = a.config.GeminiModel
+			}
+			a.aiClient = ai.NewClient(apiKey, modelName)
+		}
 	}
 
 	if a.aiClient == nil {
-		a.statusMsg = "Gemini API key not set (add GEMINI_API_KEY to .env)"
-		return
+		a.statusMsg = "Gemini API key not found. Set GEMINI_API_KEY environment variable."
+		return nil
 	}
 
-	// 1. Split body into blocks
+	// 3. Split body into blocks
 	blocks := model.SplitBlocks(a.currentNote.Body)
+	if len(blocks) == 0 {
+		a.statusMsg = "Note is empty. Type some content first!"
+		return nil
+	}
+
 	if a.currentChapter.ProcessedHashes == nil {
 		a.currentChapter.ProcessedHashes = make(map[string]bool)
 	}
@@ -536,35 +583,35 @@ func (a *App) triggerAIRefine() {
 		}
 	}
 
+	// If all blocks were marked processed, but the user explicitly pressed Ctrl+G:
+	// Refine all blocks in the note!
 	if len(dirtyBlocks) == 0 {
-		a.statusMsg = "Nothing new to refine"
-		return
+		for _, b := range blocks {
+			dirtyBlocks = append(dirtyBlocks, ai.BlockRequest{
+				ID:   b.ID,
+				Text: b.Text,
+			})
+		}
 	}
 
-	// 2. Create snapshot of chapter first
+	// 4. Create snapshot of chapter first
 	_ = a.library.CreateSnapshot(a.currentBook.Slug, a.currentChapter.ID)
 
-	// 3. Trigger asynchronous AI processing
+	// 5. Trigger asynchronous AI processing
 	a.aiProcessing = true
-	a.statusMsg = fmt.Sprintf("✦ Refining %d changed block(s) with Gemini...", len(dirtyBlocks))
+	a.statusMsg = fmt.Sprintf("✦ Refining %d block(s) with Gemini AI...", len(dirtyBlocks))
 
 	client := a.aiClient
-	// Launch background command via goroutine channel
-	go func() {
+	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		resp, err := client.RefineBlocks(ctx, dirtyBlocks)
 		if err != nil {
-			a.err = err
-			a.statusMsg = fmt.Sprintf("AI error: %v", err)
-			a.aiProcessing = false
-			return
+			return aiErrorMsg{err: err}
 		}
 		diffs := ai.PrepareDiff(dirtyBlocks, resp)
-		a.diffModel.SetBlocks(diffs)
-		a.aiProcessing = false
-		a.pushScreen(ScreenDiffReview)
-	}()
+		return aiDiffResultMsg{diffs: diffs}
+	}
 }
 
 func (a *App) View() string {

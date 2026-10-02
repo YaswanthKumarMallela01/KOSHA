@@ -847,16 +847,23 @@ func (m Model) View() string {
 	// Edit Mode View
 	var sb strings.Builder
 
-	lineNumberStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Width(4).Align(lipgloss.Right).MarginRight(1)
-	cursorLineNumberStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Width(4).Align(lipgloss.Right).MarginRight(1)
+	// Professional pitch black code editor styles
+	lineNumberStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#4A5268")).Width(4).Align(lipgloss.Right)
+	cursorLineNumberStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#F5A623")).Bold(true).Width(4).Align(lipgloss.Right)
+	dividerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#2E3342"))
 	
-	textStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	selectionStyle := lipgloss.NewStyle().Background(lipgloss.Color("205")).Foreground(lipgloss.Color("0"))
-	cursorStyle := lipgloss.NewStyle().Background(lipgloss.Color("252")).Foreground(lipgloss.Color("0"))
+	textStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#EDE6D6"))
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#606880"))
+	selectionStyle := lipgloss.NewStyle().Background(lipgloss.Color("#E58BB0")).Foreground(lipgloss.Color("#000000"))
+	cursorStyle := lipgloss.NewStyle().Background(lipgloss.Color("#F5A623")).Foreground(lipgloss.Color("#000000"))
 	
+	maxLines := m.height - 3
+	if maxLines < 3 {
+		maxLines = 3
+	}
+
 	startLine := m.scrollOffset
-	endLine := startLine + m.height - 1
+	endLine := startLine + maxLines
 	if endLine > len(m.buffer.lines) {
 		endLine = len(m.buffer.lines)
 	}
@@ -864,10 +871,13 @@ func (m Model) View() string {
 	for i := startLine; i < endLine; i++ {
 		lineRunes := m.buffer.lines[i]
 		
-		if i == m.buffer.cursorY {
+		isCursorLine := (i == m.buffer.cursorY)
+		if isCursorLine {
 			sb.WriteString(cursorLineNumberStyle.Render(fmt.Sprintf("%d", i+1)))
+			sb.WriteString(dividerStyle.Render(" │ "))
 		} else {
 			sb.WriteString(lineNumberStyle.Render(fmt.Sprintf("%d", i+1)))
+			sb.WriteString(dividerStyle.Render(" │ "))
 		}
 
 		var lineStr strings.Builder
@@ -898,7 +908,7 @@ func (m Model) View() string {
 			if j < len(lineRunes) {
 				r = lineRunes[j]
 			} else {
-				r = ' ' // pad end for cursor/selection
+				r = ' '
 				if !isCursor && !isSelected {
 					continue
 				}
@@ -944,21 +954,28 @@ func (m Model) View() string {
 │ c  Center    ::: │
 │ r  Right     ::: │
 └──────────────────┘`
-		paneStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
+		paneStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#F5A623")).Padding(0, 1)
 		mainView = lipgloss.JoinHorizontal(lipgloss.Top, mainView, paneStyle.Render(pane))
 	}
 	
-	var status strings.Builder
-	statusStyle := lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("250")).Width(m.width)
-	
-	status.WriteString(fmt.Sprintf(" [%d,%d] ", m.buffer.cursorY+1, m.buffer.cursorX+1))
+	// Clean pitch-black status bar with statistics
+	fullText := m.buffer.Text()
+	wordCount := len(strings.Fields(fullText))
+	charCount := len(fullText)
+	lineCount := len(m.buffer.lines)
+
+	saveStatus := "Saved ✓"
 	if m.dirty {
-		status.WriteString("• ")
+		saveStatus = "Unsaved Changes •"
 	}
-	if m.saved {
-		status.WriteString("Saved ✓ ")
-	}
-	
-	res := lipgloss.JoinVertical(lipgloss.Left, mainView, statusStyle.Render(status.String()))
-	return res
+
+	statusDivider := dividerStyle.Render(strings.Repeat("─", m.width))
+	statusText := fmt.Sprintf("  %s  │  Ln %d, Col %d  │  Lines: %d  │  Words: %d  │  Chars: %d  │  %s",
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F5A623")).Render("EDIT"),
+		m.buffer.cursorY+1, m.buffer.cursorX+1,
+		lineCount, wordCount, charCount,
+		lipgloss.NewStyle().Foreground(lipgloss.Color("#E58BB0")).Render(saveStatus),
+	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, mainView, statusDivider, statusText)
 }
