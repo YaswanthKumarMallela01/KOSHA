@@ -360,7 +360,9 @@ func renderNodesToWordRuns(sb *strings.Builder, nodes []*markup.Node, bold, ital
 			renderNodesToWordRuns(sb, n.Children, true, italic, true, strike, true, "D97706", fontSize)
 		case "code":
 			writeWordRun(sb, n.Content, false, false, false, false, false, true, "0F172A", fontSize)
-		case "url", "link":
+		case "link":
+			writeWordRun(sb, "[["+n.Content+"]]", false, false, true, false, false, false, "0284C7", fontSize)
+		case "url":
 			writeWordRun(sb, n.Content, false, false, true, false, false, false, "0284C7", fontSize)
 		case "tag":
 			writeWordRun(sb, "#"+n.Content, true, false, false, false, false, false, "DB2777", fontSize)

@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"github.com/YaswanthKumarMallela01/kosha/internal/ai"
 	"github.com/YaswanthKumarMallela01/kosha/internal/config"
@@ -102,6 +103,7 @@ func loadingTick() tea.Cmd {
 }
 
 func NewApp(cfg *config.Config, lib *store.Library, idx *search.Index, aiCli *ai.Client) *App {
+	lipgloss.SetColorProfile(termenv.TrueColor)
 	a := &App{
 		screen:          ScreenLoading,
 		loadingStep:     0,
@@ -164,11 +166,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if msg.String() == "ctrl+c" {
-			// Save active note if in editor before exit
-			if a.screen == ScreenNoteEdit && a.currentNote != nil && a.currentChapter != nil {
-				a.currentNote.Body = a.editorModel.Content()
-				a.currentNote.UpdatedAt = time.Now()
-				_ = a.library.SaveChapter(a.currentBook.Slug, a.currentChapter)
+			if a.screen == ScreenNoteEdit {
+				// In editor, Ctrl+C is copy to clipboard - handled by editorModel
+				break
 			}
 			return a, tea.Quit
 		}
@@ -293,8 +293,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (a *App) updateEditor(msg tea.Msg) tea.Cmd {
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		switch keyMsg.String() {
+		switch strings.ToLower(keyMsg.String()) {
 		case "esc":
+			if a.editorModel.IsFormatPaneOpen() || a.editorModel.HasSelection() {
+				// Let editor model handle closing format pane or clearing selection
+				break
+			}
 			// Save and return to Book (vaults shelf)
 			if a.currentNote != nil && a.currentChapter != nil && a.currentBook != nil {
 				a.currentNote.Body = a.editorModel.Content()
@@ -325,7 +329,7 @@ func (a *App) updateEditor(msg tea.Msg) tea.Cmd {
 				a.statusMsg = "Chapter snapshot saved"
 			}
 			return nil
-		case "ctrl+i":
+		case "alt+i", "ctrl+i":
 			// Image insertion - open input overlay to get image path
 			a.inputOverlay.Open("Insert image — enter file path:", "", "insert_image", "")
 			a.pushScreen(ScreenNewItem)
@@ -359,6 +363,14 @@ func (a *App) updateEditor(msg tea.Msg) tea.Cmd {
 	if em, ok := edModel.(editor.Model); ok {
 		a.editorModel = em
 	}
+
+	if a.editorModel.WantsImage() {
+		a.editorModel.ClearWantsImage()
+		a.inputOverlay.Open("Insert image — enter file path:", "", "insert_image", "")
+		a.pushScreen(ScreenNewItem)
+		return nil
+	}
+
 	return edCmd
 }
 

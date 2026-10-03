@@ -10,6 +10,8 @@ import (
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 	"golang.org/x/term"
 
 	"github.com/YaswanthKumarMallela01/kosha/internal/ai"
@@ -22,9 +24,10 @@ import (
 	"github.com/YaswanthKumarMallela01/kosha/internal/ui"
 )
 
-const version = "0.3.2"
+const version = "0.3.3"
 
 func main() {
+	lipgloss.SetColorProfile(termenv.TrueColor)
 	if len(os.Args) < 2 {
 		runTUI("")
 		return

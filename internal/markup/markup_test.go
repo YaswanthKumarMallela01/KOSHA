@@ -1,6 +1,7 @@
 package markup
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -178,8 +179,12 @@ func TestURLParsingAndRendering(t *testing.T) {
 	}
 
 	term := RenderToTerminal(input, 100, nil)
-	if !strings.Contains(term, "https://github.com/YaswanthKumarMallela01/KOSHA") {
-		t.Errorf("Expected URL in terminal rendering, got: %s", term)
+	if !strings.Contains(term, "56;189;248") {
+		t.Errorf("Expected electric blue ANSI styling in terminal rendering, got: %s", term)
+	}
+	clean := regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`).ReplaceAllString(term, "")
+	if !strings.Contains(clean, "https://github.com/YaswanthKumarMallela01/KOSHA") {
+		t.Errorf("Expected URL in terminal rendering, got: %s", clean)
 	}
 }
 

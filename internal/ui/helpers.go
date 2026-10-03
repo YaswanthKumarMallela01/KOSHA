@@ -103,7 +103,7 @@ func renderGlassPanel(content string, width, height int) string {
 		if w < panelWidth {
 			trailing = bgStyle.Render(strings.Repeat(" ", panelWidth-w))
 		}
-		paddedLines = append(paddedLines, bgStyle.Render(line)+trailing)
+		paddedLines = append(paddedLines, line+trailing)
 	}
 	return strings.Join(paddedLines, "\n")
 }

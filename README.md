@@ -93,9 +93,10 @@ Inside the editor, press **`Ctrl+G`** to automatically copy-edit spelling, gramm
 - **`Shift + ↑ / ↓ / ← / →`**: Select multiple lines or characters with cursor
 - **Mouse Click & Drag**: Highlight and select text across multiple lines with mouse/trackpad
 - **`Ctrl+A`**: Select entire note across all lines
-- **`Ctrl+F`**: Open formatting toolbar (applies bold, italic, underline, strike, highlights, quotes, headings across entire selection)
+- **`Ctrl+F`**: Open formatting toolbar (applies bold, italic, underline, strike, highlights, quotes, headings, and images across entire selection)
 - **`Alt+B / Alt+I / Alt+U / Alt+S`**: Instant inline formatting for single words or multi-line selections
-- **`Ctrl+I` (in Editor)**: Insert embedded image `!img[alt](path|align|width%)` with alignment & sizing
+- **`Alt+I` / `Ctrl+I` / `Ctrl+F` ➜ `p` (in Editor)**: Insert embedded image `!img[alt](path|align|width%)` with alignment & sizing
+- **`Ctrl+Z / Ctrl+Y`**: Instant undo/redo with atomic history for multi-line formatting and text changes
 - **`Ctrl+P` (in Read/Edit Mode)**: Export note to styled **PDF** (passphrase-protected)
 - **`Ctrl+W` (in Read/Edit Mode)**: Export note to Microsoft **Word (.docx)** (passphrase-protected)
 - **`Ctrl+G`**: Run Gemini AI copy-editor & smart highlights
@@ -124,7 +125,7 @@ Inside the editor, press **`Ctrl+G`** to automatically copy-edit spelling, gramm
 | `echo "idea" \| kosha add` | Pipe text from stdin directly into quick capture |
 | `kosha search "query"` | Launch directly into search mode with prefilled query |
 | `kosha export <book> [--format pdf\|word\|md] [--out <dir>]` | Export book notes to PDF, Word, or Markdown |
-| `kosha version` | Print version (v0.3.2) |
+| `kosha version` | Print version (v0.3.3) |
 | `kosha help` | Show command reference |
 
 ---

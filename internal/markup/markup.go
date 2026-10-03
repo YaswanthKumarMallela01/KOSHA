@@ -6,6 +6,7 @@ import (
 	"unicode"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 // Theme defines the styling colors and styles for Kosha markup.
@@ -41,6 +42,7 @@ type Theme struct {
 
 // NewDefaultTheme creates a theme with the default colors.
 func NewDefaultTheme() *Theme {
+	lipgloss.SetColorProfile(termenv.TrueColor)
 	t := &Theme{
 		Background:     lipgloss.Color("#0E1022"),
 		GlassFill:      lipgloss.Color("#1A1E3C"),
@@ -246,7 +248,7 @@ func isURLStart(runes []rune, idx int) bool {
 func findEnd(runes []rune, start int, marker string) int {
 	markerRunes := []rune(marker)
 	for i := start; i <= len(runes)-len(markerRunes); i++ {
-		if runes[i-1] == '\\' {
+		if i > 0 && runes[i-1] == '\\' {
 			continue
 		}
 		match := true
@@ -323,8 +325,6 @@ func RenderToTerminal(input string, width int, theme *Theme) string {
 			renderedLine = lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(renderedLine)
 		} else if align == "right" && width > 0 {
 			renderedLine = lipgloss.NewStyle().Width(width).Align(lipgloss.Right).Render(renderedLine)
-		} else if align == "left" && width > 0 {
-			renderedLine = lipgloss.NewStyle().Width(width).Align(lipgloss.Left).Render(renderedLine)
 		}
 
 		out = append(out, renderedLine)
@@ -585,7 +585,7 @@ func RenderNodesToHTML(nodes []*Node) string {
 		case "code":
 			sb.WriteString("<code>" + htmlEscapeText(n.Content) + "</code>")
 		case "link":
-			sb.WriteString("<u>" + htmlEscapeText(n.Content) + "</u>")
+			sb.WriteString(fmt.Sprintf(`<a href="#%s"><u>[[%s]]</u></a>`, htmlEscapeText(n.Content), htmlEscapeText(n.Content)))
 		case "url":
 			if strings.Contains(n.Content, " (") && strings.HasSuffix(n.Content, ")") {
 				idx := strings.LastIndex(n.Content, " (")

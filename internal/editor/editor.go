@@ -128,11 +128,7 @@ func (b *Buffer) Redo() {
 	b.ClearSelection()
 }
 
-func (b *Buffer) InsertRune(r rune) {
-	b.pushUndo()
-	if b.hasSelection {
-		b.DeleteSelection()
-	}
+func (b *Buffer) insertRuneRaw(r rune) {
 	if r == '\n' {
 		left := b.lines[b.cursorY][:b.cursorX]
 		right := b.lines[b.cursorY][b.cursorX:]
@@ -157,6 +153,14 @@ func (b *Buffer) InsertRune(r rune) {
 	}
 }
 
+func (b *Buffer) InsertRune(r rune) {
+	b.pushUndo()
+	if b.HasSelection() {
+		b.DeleteSelection()
+	}
+	b.insertRuneRaw(r)
+}
+
 func (b *Buffer) HasSelection() bool {
 	if !b.hasSelection {
 		return false
@@ -175,7 +179,54 @@ func (b *Buffer) InsertString(s string) {
 		if r == '\r' {
 			continue
 		}
-		b.InsertRune(r)
+		b.insertRuneRaw(r)
+	}
+}
+
+func (b *Buffer) IndentSelection() {
+	if !b.HasSelection() {
+		return
+	}
+	b.pushUndo()
+	start, end := b.getSelectionRange()
+	for l := start.Line; l <= end.Line; l++ {
+		b.lines[l] = append([]rune("    "), b.lines[l]...)
+	}
+	b.selStart = Position{Line: start.Line, Col: start.Col + 4}
+	b.selEnd = Position{Line: end.Line, Col: end.Col + 4}
+	b.cursorX += 4
+}
+
+func (b *Buffer) UnindentSelection() {
+	if !b.HasSelection() {
+		return
+	}
+	b.pushUndo()
+	start, end := b.getSelectionRange()
+	for l := start.Line; l <= end.Line; l++ {
+		line := b.lines[l]
+		spaces := 0
+		for spaces < 4 && spaces < len(line) && line[spaces] == ' ' {
+			spaces++
+		}
+		if spaces > 0 {
+			b.lines[l] = line[spaces:]
+		}
+	}
+	colStart := start.Col - 4
+	if colStart < 0 {
+		colStart = 0
+	}
+	colEnd := end.Col - 4
+	if colEnd < 0 {
+		colEnd = 0
+	}
+	b.selStart = Position{Line: start.Line, Col: colStart}
+	b.selEnd = Position{Line: end.Line, Col: colEnd}
+	if b.cursorX >= 4 {
+		b.cursorX -= 4
+	} else {
+		b.cursorX = 0
 	}
 }
 
@@ -490,7 +541,12 @@ func (b *Buffer) WrapOrUnwrapSelection(prefix, suffix string) {
 	b.DeleteSelection()
 	b.cursorY = start.Line
 	b.cursorX = start.Col
-	b.InsertString(text)
+	for _, r := range []rune(text) {
+		if r == '\r' {
+			continue
+		}
+		b.insertRuneRaw(r)
+	}
 
 	// Keep selection active over the newly formatted range
 	b.selStart = Position{Line: start.Line, Col: start.Col}
@@ -554,6 +610,7 @@ type Model struct {
 	scrollOffset   int
 	mode           EditorMode
 	showFormatPane bool
+	wantsImage     bool
 	dirty          bool
 	lastEdit       time.Time
 	saved          bool
@@ -581,6 +638,22 @@ func (m Model) Content() string {
 
 func (m Model) IsDirty() bool {
 	return m.dirty
+}
+
+func (m Model) WantsImage() bool {
+	return m.wantsImage
+}
+
+func (m *Model) ClearWantsImage() {
+	m.wantsImage = false
+}
+
+func (m Model) IsFormatPaneOpen() bool {
+	return m.showFormatPane
+}
+
+func (m Model) HasSelection() bool {
+	return m.buffer.HasSelection()
 }
 
 func (m *Model) SetContent(s string) {
@@ -661,7 +734,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		
 		// Direct global shortcut handlers for editor
-		switch strings.ToLower(msg.String()) {
+		strLower := strings.ToLower(msg.String())
+		switch strLower {
 		case "ctrl+f":
 			m.showFormatPane = !m.showFormatPane
 			return m, tea.Batch(cmds...)
@@ -681,31 +755,84 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.buffer.ClearSelection()
 				return m, tea.Batch(cmds...)
 			}
+			return m, tea.Batch(cmds...)
+		case "ctrl+z":
+			m.buffer.Undo()
+			m.markDirty()
+			return m, tea.Batch(cmds...)
+		case "ctrl+y":
+			m.buffer.Redo()
+			m.markDirty()
+			return m, tea.Batch(cmds...)
+		case "ctrl+b":
+			if m.buffer.HasSelection() {
+				m.buffer.WrapOrUnwrapSelection("**", "**")
+			} else {
+				m.buffer.WrapOrUnwrapWord("**", "**")
+			}
+			m.markDirty()
+			return m, tea.Batch(cmds...)
+		case "ctrl+u":
+			if m.buffer.HasSelection() {
+				m.buffer.WrapOrUnwrapSelection("__", "__")
+			} else {
+				m.buffer.WrapOrUnwrapWord("__", "__")
+			}
+			m.markDirty()
+			return m, tea.Batch(cmds...)
+		case "alt+i":
+			m.wantsImage = true
+			return m, tea.Batch(cmds...)
+		case "ctrl+a":
+			m.buffer.SelectAll()
+			return m, tea.Batch(cmds...)
+		case "ctrl+c":
+			if m.buffer.hasSelection {
+				_ = clipboard.WriteAll(m.buffer.SelectedText())
+			}
+			return m, tea.Batch(cmds...)
+		case "ctrl+x":
+			if m.buffer.hasSelection {
+				_ = clipboard.WriteAll(m.buffer.SelectedText())
+				m.buffer.DeleteSelection()
+				m.markDirty()
+			}
+			return m, tea.Batch(cmds...)
+		case "ctrl+v":
+			text, err := clipboard.ReadAll()
+			if err == nil && text != "" {
+				m.buffer.InsertString(text)
+				m.markDirty()
+			}
+			return m, tea.Batch(cmds...)
+		case "ctrl", "alt", "shift":
+			// Solitary modifier key press: NEVER touch selection or buffer!
+			return m, tea.Batch(cmds...)
 		}
 
 		if m.showFormatPane && m.mode == EditMode {
 			k := strings.ToLower(msg.String())
 			handled := true
 			switch k {
-			case "b":
+			case "b", "ctrl+b":
 				if m.buffer.HasSelection() {
 					m.buffer.WrapOrUnwrapSelection("**", "**")
 				} else {
 					m.buffer.WrapOrUnwrapWord("**", "**")
 				}
-			case "i":
+			case "i", "ctrl+i":
 				if m.buffer.HasSelection() {
 					m.buffer.WrapOrUnwrapSelection("*", "*")
 				} else {
 					m.buffer.WrapOrUnwrapWord("*", "*")
 				}
-			case "u":
+			case "u", "ctrl+u":
 				if m.buffer.HasSelection() {
 					m.buffer.WrapOrUnwrapSelection("__", "__")
 				} else {
 					m.buffer.WrapOrUnwrapWord("__", "__")
 				}
-			case "s":
+			case "s", "ctrl+s":
 				if m.buffer.HasSelection() {
 					m.buffer.WrapOrUnwrapSelection("~~", "~~")
 				} else {
@@ -747,6 +874,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					m.buffer.WrapOrUnwrapWord("`", "`")
 				}
+			case "p", "alt+i":
+				m.wantsImage = true
+				m.showFormatPane = false
+				return m, tea.Batch(cmds...)
 			case "l":
 				if m.buffer.HasSelection() {
 					m.buffer.WrapOrUnwrapSelection(":::left\n", "")
@@ -785,6 +916,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showFormatPane = false
 				return m, tea.Batch(cmds...)
 			}
+
+			// If format pane is open and key is not handled, do not fall through to typing or deleting selection!
+			if k != "ctrl" && k != "alt" && k != "shift" {
+				m.showFormatPane = false
+			}
+			return m, tea.Batch(cmds...)
 		}
 
 		switch msg.Type {
@@ -938,33 +1075,71 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.buffer.InsertRune('\n')
 			m.markDirty()
 		case tea.KeyTab:
-			m.buffer.InsertString("    ")
+			if m.buffer.HasSelection() {
+				m.buffer.IndentSelection()
+			} else {
+				m.buffer.InsertString("    ")
+			}
 			m.markDirty()
+			return m, tea.Batch(cmds...)
+		case tea.KeyShiftTab:
+			if m.buffer.HasSelection() {
+				m.buffer.UnindentSelection()
+				m.markDirty()
+			}
+			return m, tea.Batch(cmds...)
 		case tea.KeyCtrlZ:
 			m.buffer.Undo()
 			m.markDirty()
+			return m, tea.Batch(cmds...)
 		case tea.KeyCtrlY:
 			m.buffer.Redo()
 			m.markDirty()
+			return m, tea.Batch(cmds...)
+		case tea.KeyCtrlB:
+			if m.buffer.HasSelection() {
+				m.buffer.WrapOrUnwrapSelection("**", "**")
+			} else {
+				m.buffer.WrapOrUnwrapWord("**", "**")
+			}
+			m.markDirty()
+			return m, tea.Batch(cmds...)
+		case tea.KeyCtrlU:
+			if m.buffer.HasSelection() {
+				m.buffer.WrapOrUnwrapSelection("__", "__")
+			} else {
+				m.buffer.WrapOrUnwrapWord("__", "__")
+			}
+			m.markDirty()
+			return m, tea.Batch(cmds...)
+		case tea.KeyNull:
+			return m, tea.Batch(cmds...)
 		case tea.KeyCtrlC:
 			if m.buffer.hasSelection {
 				_ = clipboard.WriteAll(m.buffer.SelectedText())
 			}
+			return m, tea.Batch(cmds...)
 		case tea.KeyCtrlX:
 			if m.buffer.hasSelection {
 				_ = clipboard.WriteAll(m.buffer.SelectedText())
 				m.buffer.DeleteSelection()
 				m.markDirty()
 			}
+			return m, tea.Batch(cmds...)
 		case tea.KeyCtrlV:
 			text, err := clipboard.ReadAll()
 			if err == nil && text != "" {
 				m.buffer.InsertString(text)
 				m.markDirty()
 			}
+			return m, tea.Batch(cmds...)
 		case tea.KeyRunes, tea.KeySpace:
-			if strings.HasPrefix(strings.ToLower(msg.String()), "ctrl+") {
+			strVal := strings.ToLower(msg.String())
+			if strings.HasPrefix(strVal, "ctrl") || strings.HasPrefix(strVal, "alt") {
 				// Holding Ctrl or pressing Ctrl combinations MUST NEVER delete selection or insert control characters!
+				return m, tea.Batch(cmds...)
+			}
+			if len(msg.Runes) > 0 && unicode.IsControl(msg.Runes[0]) {
 				return m, tea.Batch(cmds...)
 			}
 			if msg.Alt {
@@ -1344,6 +1519,7 @@ func (m Model) View() string {
 │ 3  Heading 3 ### │
 │ q  Quote     >   │
 │ m  Code      ` + "`" + `   │
+│ p  Image    !img │
 │ l  Left      ::: │
 │ c  Center    ::: │
 │ r  Right     ::: │
