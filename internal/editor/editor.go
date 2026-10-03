@@ -391,6 +391,19 @@ func (b *Buffer) CurrentWord() string {
 	return string(line[start:end])
 }
 
+// SelectAll selects all text in the buffer across all lines.
+func (b *Buffer) SelectAll() {
+	if len(b.lines) == 0 {
+		return
+	}
+	b.selStart = Position{Line: 0, Col: 0}
+	lastLine := len(b.lines) - 1
+	b.selEnd = Position{Line: lastLine, Col: len(b.lines[lastLine])}
+	b.hasSelection = true
+	b.cursorY = lastLine
+	b.cursorX = len(b.lines[lastLine])
+}
+
 func (b *Buffer) WrapOrUnwrapSelection(prefix, suffix string) {
 	if !b.hasSelection {
 		return
@@ -398,18 +411,82 @@ func (b *Buffer) WrapOrUnwrapSelection(prefix, suffix string) {
 	b.pushUndo()
 	
 	text := b.SelectedText()
-	if strings.HasPrefix(text, prefix) && strings.HasSuffix(text, suffix) {
-		text = text[len(prefix) : len(text)-len(suffix)]
+	start, _ := b.getSelectionRange()
+
+	if strings.Contains(text, "\n") {
+		// Multi-line selection: format each line individually
+		lines := strings.Split(text, "\n")
+		isBlockPrefix := suffix == "" && (strings.HasPrefix(prefix, "#") || strings.HasPrefix(prefix, ">") || strings.HasPrefix(prefix, ":::"))
+
+		allFormatted := true
+		for _, l := range lines {
+			trimmed := strings.TrimSpace(l)
+			if len(trimmed) == 0 {
+				continue
+			}
+			if isBlockPrefix {
+				if !strings.HasPrefix(l, prefix) {
+					allFormatted = false
+					break
+				}
+			} else {
+				if !strings.HasPrefix(l, prefix) || !strings.HasSuffix(l, suffix) {
+					allFormatted = false
+					break
+				}
+			}
+		}
+
+		var newLines []string
+		for _, l := range lines {
+			if len(strings.TrimSpace(l)) == 0 {
+				newLines = append(newLines, l)
+				continue
+			}
+			if allFormatted {
+				// Unwrap / remove formatting
+				if isBlockPrefix {
+					if strings.HasPrefix(l, prefix) {
+						l = l[len(prefix):]
+					}
+				} else {
+					if strings.HasPrefix(l, prefix) && strings.HasSuffix(l, suffix) {
+						l = l[len(prefix) : len(l)-len(suffix)]
+					}
+				}
+			} else {
+				// Wrap / apply formatting to each selected line
+				if isBlockPrefix {
+					if !strings.HasPrefix(l, prefix) {
+						l = prefix + l
+					}
+				} else {
+					if !strings.HasPrefix(l, prefix) || !strings.HasSuffix(l, suffix) {
+						l = prefix + l + suffix
+					}
+				}
+			}
+			newLines = append(newLines, l)
+		}
+		text = strings.Join(newLines, "\n")
 	} else {
-		text = prefix + text + suffix
+		// Single-line selection
+		if strings.HasPrefix(text, prefix) && strings.HasSuffix(text, suffix) {
+			text = text[len(prefix) : len(text)-len(suffix)]
+		} else {
+			text = prefix + text + suffix
+		}
 	}
 	
-	start, _ := b.getSelectionRange()
 	b.DeleteSelection()
-	
 	b.cursorY = start.Line
 	b.cursorX = start.Col
 	b.InsertString(text)
+
+	// Keep selection active over the newly formatted range
+	b.selStart = Position{Line: start.Line, Col: start.Col}
+	b.selEnd = Position{Line: b.cursorY, Col: b.cursorX}
+	b.hasSelection = true
 }
 
 func (b *Buffer) WrapOrUnwrapWord(prefix, suffix string) {
@@ -615,13 +692,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.buffer.WrapOrUnwrapWord("^^", "^^")
 				}
 			case "1":
-				m.buffer.InsertString("# ")
+				if m.buffer.hasSelection {
+					m.buffer.WrapOrUnwrapSelection("# ", "")
+				} else {
+					m.buffer.InsertString("# ")
+				}
 			case "2":
-				m.buffer.InsertString("## ")
+				if m.buffer.hasSelection {
+					m.buffer.WrapOrUnwrapSelection("## ", "")
+				} else {
+					m.buffer.InsertString("## ")
+				}
 			case "3":
-				m.buffer.InsertString("### ")
+				if m.buffer.hasSelection {
+					m.buffer.WrapOrUnwrapSelection("### ", "")
+				} else {
+					m.buffer.InsertString("### ")
+				}
 			case "q":
-				m.buffer.InsertString("> ")
+				if m.buffer.hasSelection {
+					m.buffer.WrapOrUnwrapSelection("> ", "")
+				} else {
+					m.buffer.InsertString("> ")
+				}
 			case "m":
 				if m.buffer.hasSelection {
 					m.buffer.WrapOrUnwrapSelection("`", "`")
@@ -629,11 +722,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.buffer.WrapOrUnwrapWord("`", "`")
 				}
 			case "l":
-				m.buffer.InsertString("\n:::left\n")
+				if m.buffer.hasSelection {
+					m.buffer.WrapOrUnwrapSelection(":::left\n", "")
+				} else {
+					m.buffer.InsertString("\n:::left\n")
+				}
 			case "c":
-				m.buffer.InsertString("\n:::center\n")
+				if m.buffer.hasSelection {
+					m.buffer.WrapOrUnwrapSelection(":::center\n", "\n:::left")
+				} else {
+					m.buffer.InsertString("\n:::center\n")
+				}
 			case "r":
-				m.buffer.InsertString("\n:::right\n")
+				if m.buffer.hasSelection {
+					m.buffer.WrapOrUnwrapSelection(":::right\n", "\n:::left")
+				} else {
+					m.buffer.InsertString("\n:::right\n")
+				}
 			case "esc", "ctrl+f":
 				m.showFormatPane = false
 			default:
@@ -674,8 +779,58 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 
+		switch msg.String() {
+		case "ctrl+a":
+			m.buffer.SelectAll()
+			return m, tea.Batch(cmds...)
+		case "shift+up":
+			if !m.buffer.hasSelection {
+				m.buffer.StartSelection()
+			}
+			m.buffer.MoveCursor(0, -1)
+			m.buffer.UpdateSelection()
+			return m, tea.Batch(cmds...)
+		case "shift+down":
+			if !m.buffer.hasSelection {
+				m.buffer.StartSelection()
+			}
+			m.buffer.MoveCursor(0, 1)
+			m.buffer.UpdateSelection()
+			return m, tea.Batch(cmds...)
+		case "shift+left":
+			if !m.buffer.hasSelection {
+				m.buffer.StartSelection()
+			}
+			m.buffer.MoveCursor(-1, 0)
+			m.buffer.UpdateSelection()
+			return m, tea.Batch(cmds...)
+		case "shift+right":
+			if !m.buffer.hasSelection {
+				m.buffer.StartSelection()
+			}
+			m.buffer.MoveCursor(1, 0)
+			m.buffer.UpdateSelection()
+			return m, tea.Batch(cmds...)
+		case "shift+home":
+			if !m.buffer.hasSelection {
+				m.buffer.StartSelection()
+			}
+			m.buffer.Home()
+			m.buffer.UpdateSelection()
+			return m, tea.Batch(cmds...)
+		case "shift+end":
+			if !m.buffer.hasSelection {
+				m.buffer.StartSelection()
+			}
+			m.buffer.End()
+			m.buffer.UpdateSelection()
+			return m, tea.Batch(cmds...)
+		}
+
 		// Edit mode bindings
 		switch msg.Type {
+		case tea.KeyCtrlA:
+			m.buffer.SelectAll()
 		case tea.KeyUp:
 			m.buffer.ClearSelection()
 			m.buffer.MoveCursor(0, -1)
@@ -796,8 +951,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.focused {
 			return m, nil
 		}
-		switch msg.Type {
-		case tea.MouseWheelUp:
+		if msg.Type == tea.MouseWheelUp {
 			if m.mode == PreviewMode {
 				m.scrollOffset -= 3
 				if m.scrollOffset < 0 {
@@ -806,11 +960,69 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.buffer.MoveCursor(0, -3)
 			}
-		case tea.MouseWheelDown:
+		} else if msg.Type == tea.MouseWheelDown {
 			if m.mode == PreviewMode {
 				m.scrollOffset += 3
 			} else {
 				m.buffer.MoveCursor(0, 3)
+			}
+		} else if msg.Button == tea.MouseButtonLeft && m.mode == EditMode {
+			contentWidth := m.width - 9
+			if contentWidth < 10 {
+				contentWidth = 10
+			}
+
+			clickedVisualY := msg.Y - 2 + m.scrollOffset
+			if clickedVisualY < 0 {
+				clickedVisualY = 0
+			}
+			clickedCol := msg.X - 7
+			if clickedCol < 0 {
+				clickedCol = 0
+			}
+
+			curVisRow := 0
+			targetLine := 0
+			targetCol := 0
+			found := false
+
+			for bIdx, lRunes := range m.buffer.lines {
+				numRows := len(lRunes) / contentWidth
+				if len(lRunes)%contentWidth != 0 || len(lRunes) == 0 {
+					numRows++
+				}
+				if clickedVisualY >= curVisRow && clickedVisualY < curVisRow+numRows {
+					targetLine = bIdx
+					rowOffset := clickedVisualY - curVisRow
+					targetCol = rowOffset*contentWidth + clickedCol
+					if targetCol > len(lRunes) {
+						targetCol = len(lRunes)
+					}
+					found = true
+					break
+				}
+				curVisRow += numRows
+			}
+
+			if !found && len(m.buffer.lines) > 0 {
+				targetLine = len(m.buffer.lines) - 1
+				targetCol = len(m.buffer.lines[targetLine])
+			}
+
+			if msg.Action == tea.MouseActionPress {
+				if msg.Shift {
+					m.buffer.cursorY = targetLine
+					m.buffer.cursorX = targetCol
+					m.buffer.UpdateSelection()
+				} else {
+					m.buffer.cursorY = targetLine
+					m.buffer.cursorX = targetCol
+					m.buffer.StartSelection()
+				}
+			} else if msg.Action == tea.MouseActionMotion {
+				m.buffer.cursorY = targetLine
+				m.buffer.cursorX = targetCol
+				m.buffer.UpdateSelection()
 			}
 		}
 	}

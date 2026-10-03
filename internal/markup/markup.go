@@ -1,6 +1,7 @@
 package markup
 
 import (
+	"fmt"
 	"strings"
 	"unicode"
 
@@ -77,6 +78,11 @@ type Node struct {
 	Type     string
 	Content  string
 	Children []*Node
+}
+
+// ParseInline parses a string of Kosha markup into a tree of styled nodes.
+func ParseInline(text string) []*Node {
+	return parseInline(text)
 }
 
 func parseInline(text string) []*Node {
@@ -543,4 +549,42 @@ func renderImagePlaceholder(line string, width int, theme *Theme) string {
 	}
 
 	return lipgloss.NewStyle().Width(width).Align(alignStyle).Render(boxStyle.Render(placeholder))
+}
+
+// RenderNodesToHTML converts inline markup nodes to clean HTML supported by PDF generators.
+func RenderNodesToHTML(nodes []*Node) string {
+	var sb strings.Builder
+	for _, n := range nodes {
+		switch n.Type {
+		case "text":
+			sb.WriteString(htmlEscapeText(n.Content))
+		case "bold":
+			sb.WriteString("<b>" + RenderNodesToHTML(n.Children) + "</b>")
+		case "italic":
+			sb.WriteString("<i>" + RenderNodesToHTML(n.Children) + "</i>")
+		case "underline":
+			sb.WriteString("<u>" + RenderNodesToHTML(n.Children) + "</u>")
+		case "strike":
+			sb.WriteString("<s>" + RenderNodesToHTML(n.Children) + "</s>")
+		case "imp_word", "imp_sent":
+			sb.WriteString("<b><u>" + RenderNodesToHTML(n.Children) + "</u></b>")
+		case "code":
+			sb.WriteString("<code>" + htmlEscapeText(n.Content) + "</code>")
+		case "link":
+			sb.WriteString("<u>" + htmlEscapeText(n.Content) + "</u>")
+		case "url":
+			sb.WriteString(fmt.Sprintf(`<a href="%s"><u>%s</u></a>`, htmlEscapeText(n.Content), htmlEscapeText(n.Content)))
+		case "tag":
+			sb.WriteString("<b>#" + htmlEscapeText(n.Content) + "</b>")
+		}
+	}
+	return sb.String()
+}
+
+func htmlEscapeText(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	s = strings.ReplaceAll(s, "\"", "&quot;")
+	return s
 }

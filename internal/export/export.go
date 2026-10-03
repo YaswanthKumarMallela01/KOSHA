@@ -25,7 +25,7 @@ type NoteExport struct {
 	Tags      []string
 }
 
-// ExportPDF exports a note to a PDF file at the given path.
+// ExportPDF exports a note to a PDF file at the given path preserving full formatting and alignments.
 func ExportPDF(note *NoteExport, outputPath string) error {
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	pdf.SetAutoPageBreak(true, 15)
@@ -59,10 +59,16 @@ func ExportPDF(note *NoteExport, outputPath string) error {
 	return pdf.OutputFileAndClose(outputPath)
 }
 
-// renderBodyToPDF renders Kosha markup to PDF formatting.
+// renderBodyToPDF renders Kosha markup to PDF formatting with full bold, italic, underline, links, and alignments.
 func renderBodyToPDF(pdf *gofpdf.Fpdf, body string) {
 	lines := strings.Split(body, "\n")
 	align := "L"
+
+	html := pdf.HTMLBasicNew()
+	html.Link.ClrR = 2
+	html.Link.ClrG = 132
+	html.Link.ClrB = 199 // Electric blue
+	html.Link.Underscore = true
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -85,23 +91,32 @@ func renderBodyToPDF(pdf *gofpdf.Fpdf, body string) {
 			continue
 		}
 
+		// Embedded image line: !img[alt](path|align|width%)
+		if strings.HasPrefix(trimmed, "!img[") {
+			imgInfo := markup.ParseImageLine(trimmed)
+			if imgInfo != nil {
+				renderImageToPDF(pdf, imgInfo)
+				continue
+			}
+		}
+
 		// Headings
 		if strings.HasPrefix(line, "### ") {
 			pdf.SetFont("Helvetica", "I", 13)
-			pdf.SetTextColor(237, 230, 214) // Parchment
-			renderInlineToPDF(pdf, line[4:], align)
+			pdf.SetTextColor(70, 70, 70)
+			renderLineWithHTML(pdf, &html, line[4:], align, 6)
 			pdf.Ln(3)
 			continue
 		} else if strings.HasPrefix(line, "## ") {
 			pdf.SetFont("Helvetica", "B", 15)
-			pdf.SetTextColor(50, 50, 50)
-			renderInlineToPDF(pdf, line[3:], align)
+			pdf.SetTextColor(40, 40, 40)
+			renderLineWithHTML(pdf, &html, line[3:], align, 7)
 			pdf.Ln(3)
 			continue
 		} else if strings.HasPrefix(line, "# ") {
 			pdf.SetFont("Helvetica", "B", 18)
 			pdf.SetTextColor(242, 163, 58) // Saffron
-			renderInlineToPDF(pdf, strings.ToUpper(line[2:]), align)
+			renderLineWithHTML(pdf, &html, strings.ToUpper(line[2:]), align, 8)
 			pdf.Ln(4)
 			continue
 		}
@@ -109,13 +124,13 @@ func renderBodyToPDF(pdf *gofpdf.Fpdf, body string) {
 		// Blockquote
 		if strings.HasPrefix(line, "> ") {
 			x := pdf.GetX()
-			pdf.SetDrawColor(180, 180, 180)
-			pdf.SetLineWidth(0.5)
-			pdf.Line(x, pdf.GetY(), x, pdf.GetY()+5)
+			pdf.SetDrawColor(242, 163, 58)
+			pdf.SetLineWidth(0.8)
+			pdf.Line(x, pdf.GetY(), x, pdf.GetY()+6)
 			pdf.SetX(x + 5)
 			pdf.SetFont("Helvetica", "I", 11)
-			pdf.SetTextColor(120, 120, 120)
-			renderInlineToPDF(pdf, line[2:], align)
+			pdf.SetTextColor(110, 110, 110)
+			renderLineWithHTML(pdf, &html, line[2:], align, 6)
 			pdf.Ln(2)
 			continue
 		}
@@ -123,19 +138,71 @@ func renderBodyToPDF(pdf *gofpdf.Fpdf, body string) {
 		// Normal text
 		pdf.SetFont("Helvetica", "", 11)
 		pdf.SetTextColor(30, 30, 30)
-		renderInlineToPDF(pdf, line, align)
-		pdf.Ln(1)
+		renderLineWithHTML(pdf, &html, line, align, 6)
 	}
 }
 
-// renderInlineToPDF renders inline markup to PDF.
-func renderInlineToPDF(pdf *gofpdf.Fpdf, text string, align string) {
-	// Strip markup for PDF (keep it simple and readable)
-	plain := markup.StripMarkup(text)
-	pdf.MultiCell(0, 6, plain, "", align, false)
+func renderLineWithHTML(pdf *gofpdf.Fpdf, html *gofpdf.HTMLBasicType, lineText string, align string, lineHt float64) {
+	nodes := markup.ParseInline(lineText)
+	htmlStr := markup.RenderNodesToHTML(nodes)
+	plainText := markup.StripMarkup(lineText)
+
+	pageW, _ := pdf.GetPageSize()
+	marginL, _, marginR, _ := pdf.GetMargins()
+	contentW := pageW - marginL - marginR
+
+	strW := pdf.GetStringWidth(plainText)
+
+	x := marginL
+	if align == "C" && strW < contentW {
+		x = marginL + (contentW-strW)/2
+	} else if align == "R" && strW < contentW {
+		x = marginL + (contentW - strW)
+	}
+
+	pdf.SetX(x)
+	html.Write(lineHt, htmlStr)
+	pdf.Ln(lineHt)
 }
 
-// ExportDOCX exports a note to a DOCX file at the given path.
+func renderImageToPDF(pdf *gofpdf.Fpdf, info *markup.ImageInfo) {
+	pageW, _ := pdf.GetPageSize()
+	marginL, _, marginR, _ := pdf.GetMargins()
+	contentW := pageW - marginL - marginR
+
+	// Check if file exists
+	if _, err := os.Stat(info.Path); err == nil {
+		targetW := contentW * 0.7
+		if info.Width == "100%" {
+			targetW = contentW
+		} else if info.Width == "50%" {
+			targetW = contentW * 0.5
+		}
+
+		x := marginL
+		if info.Align == "center" {
+			x = marginL + (contentW-targetW)/2
+		} else if info.Align == "right" {
+			x = marginL + (contentW - targetW)
+		}
+
+		pdf.SetX(x)
+		opt := gofpdf.ImageOptions{ReadDpi: true}
+		pdf.ImageOptions(info.Path, x, pdf.GetY(), targetW, 0, false, opt, 0, "")
+		pdf.Ln(4)
+		return
+	}
+
+	// Fallback styled placeholder box
+	pdf.SetFont("Helvetica", "I", 10)
+	pdf.SetTextColor(2, 132, 199)
+	pdf.SetDrawColor(200, 200, 200)
+	msg := fmt.Sprintf("[Image: %s | %s | %s]", info.Alt, filepath.Base(info.Path), info.Width)
+	pdf.CellFormat(0, 8, msg, "1", 1, "C", false, 0, "")
+	pdf.Ln(3)
+}
+
+// ExportDOCX exports a note to a Word .docx file preserving all inline bold, italic, underline, strike, highlights, links, and alignments.
 func ExportDOCX(note *NoteExport, outputPath string) error {
 	buf := new(bytes.Buffer)
 	w := zip.NewWriter(buf)
@@ -185,19 +252,19 @@ func buildDocumentXML(note *NoteExport) string {
 	var body strings.Builder
 
 	// Title paragraph
-	body.WriteString(buildParagraph(note.Title, "Heading1", "center", true, false, false, "D4A22E", 36))
+	body.WriteString(buildSimpleParagraph(note.Title, "Heading1", "center", true, false, false, "F2A33A", 36))
 
 	// Meta
 	metaStr := fmt.Sprintf("Created: %s  |  Updated: %s", note.CreatedAt.Format("2006-01-02 15:04"), note.UpdatedAt.Format("2006-01-02 15:04"))
 	if len(note.Tags) > 0 {
 		metaStr += "  |  Tags: " + strings.Join(note.Tags, " ")
 	}
-	body.WriteString(buildParagraph(metaStr, "", "left", false, true, false, "7C82A8", 18))
+	body.WriteString(buildSimpleParagraph(metaStr, "", "left", false, true, false, "7C82A8", 18))
 
-	// Divider (empty paragraph with bottom border)
-	body.WriteString(`<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="4" w:space="1" w:color="CCCCCC"/></w:pBdr></w:pPr></w:p>`)
+	// Divider
+	body.WriteString(`<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="E2E8F0"/></w:pBdr></w:pPr></w:p>`)
 
-	// Body
+	// Body lines
 	lines := strings.Split(note.Body, "\n")
 	align := "left"
 
@@ -220,18 +287,32 @@ func buildDocumentXML(note *NoteExport) string {
 			continue
 		}
 
-		plain := markup.StripMarkup(line)
+		// Image line
+		if strings.HasPrefix(trimmed, "!img[") {
+			imgInfo := markup.ParseImageLine(trimmed)
+			if imgInfo != nil {
+				imgText := fmt.Sprintf("[🖼  Image: %s | %s | %s]", imgInfo.Alt, filepath.Base(imgInfo.Path), imgInfo.Width)
+				body.WriteString(buildSimpleParagraph(imgText, "", imgInfo.Align, true, true, false, "0284C7", 20))
+				continue
+			}
+		}
 
+		// Headings
 		if strings.HasPrefix(line, "# ") {
-			body.WriteString(buildParagraph(strings.ToUpper(plain), "Heading1", align, true, false, false, "D4A22E", 28))
+			nodes := markup.ParseInline(strings.ToUpper(line[2:]))
+			body.WriteString(buildFormattedParagraph(nodes, "Heading1", align, 28, "F2A33A", true, false))
 		} else if strings.HasPrefix(line, "## ") {
-			body.WriteString(buildParagraph(plain, "Heading2", align, true, false, false, "333333", 24))
+			nodes := markup.ParseInline(line[3:])
+			body.WriteString(buildFormattedParagraph(nodes, "Heading2", align, 24, "1E293B", true, false))
 		} else if strings.HasPrefix(line, "### ") {
-			body.WriteString(buildParagraph(plain, "Heading3", align, false, true, false, "555555", 22))
+			nodes := markup.ParseInline(line[4:])
+			body.WriteString(buildFormattedParagraph(nodes, "Heading3", align, 22, "475569", false, true))
 		} else if strings.HasPrefix(line, "> ") {
-			body.WriteString(buildParagraph(plain, "", align, false, true, false, "888888", 22))
+			nodes := markup.ParseInline(line[2:])
+			body.WriteString(buildFormattedParagraph(nodes, "", align, 22, "64748B", false, true))
 		} else {
-			body.WriteString(buildParagraph(plain, "", align, false, false, false, "1A1A1A", 22))
+			nodes := markup.ParseInline(line)
+			body.WriteString(buildFormattedParagraph(nodes, "", align, 22, "0F172A", false, false))
 		}
 	}
 
@@ -242,7 +323,87 @@ func buildDocumentXML(note *NoteExport) string {
 </w:document>`, body.String())
 }
 
-func buildParagraph(text, style, align string, bold, italic, underline bool, color string, fontSize int) string {
+// buildFormattedParagraph creates a Word paragraph containing multiple runs with exact inline formatting.
+func buildFormattedParagraph(nodes []*markup.Node, style, align string, fontSize int, defaultColor string, defaultBold, defaultItalic bool) string {
+	var pPr strings.Builder
+	pPr.WriteString("<w:pPr>")
+	if style != "" {
+		pPr.WriteString(fmt.Sprintf(`<w:pStyle w:val="%s"/>`, style))
+	}
+	jcMap := map[string]string{"left": "left", "center": "center", "right": "right"}
+	if jc, ok := jcMap[align]; ok {
+		pPr.WriteString(fmt.Sprintf(`<w:jc w:val="%s"/>`, jc))
+	}
+	pPr.WriteString("</w:pPr>")
+
+	var runs strings.Builder
+	renderNodesToWordRuns(&runs, nodes, defaultBold, defaultItalic, false, false, false, defaultColor, fontSize)
+
+	return fmt.Sprintf(`<w:p>%s%s</w:p>`, pPr.String(), runs.String())
+}
+
+// renderNodesToWordRuns recursively generates Word <w:r> runs for each inline formatting node.
+func renderNodesToWordRuns(sb *strings.Builder, nodes []*markup.Node, bold, italic, underline, strike, highlight bool, color string, fontSize int) {
+	for _, n := range nodes {
+		switch n.Type {
+		case "text":
+			writeWordRun(sb, n.Content, bold, italic, underline, strike, highlight, false, color, fontSize)
+		case "bold":
+			renderNodesToWordRuns(sb, n.Children, true, italic, underline, strike, highlight, color, fontSize)
+		case "italic":
+			renderNodesToWordRuns(sb, n.Children, bold, true, underline, strike, highlight, color, fontSize)
+		case "underline":
+			renderNodesToWordRuns(sb, n.Children, bold, italic, true, strike, highlight, color, fontSize)
+		case "strike":
+			renderNodesToWordRuns(sb, n.Children, bold, italic, underline, true, highlight, color, fontSize)
+		case "imp_word", "imp_sent":
+			renderNodesToWordRuns(sb, n.Children, true, italic, true, strike, true, "D97706", fontSize)
+		case "code":
+			writeWordRun(sb, n.Content, false, false, false, false, false, true, "0F172A", fontSize)
+		case "url", "link":
+			writeWordRun(sb, n.Content, false, false, true, false, false, false, "0284C7", fontSize)
+		case "tag":
+			writeWordRun(sb, "#"+n.Content, true, false, false, false, false, false, "DB2777", fontSize)
+		}
+	}
+}
+
+func writeWordRun(sb *strings.Builder, text string, bold, italic, underline, strike, highlight, isCode bool, color string, fontSize int) {
+	var rPr strings.Builder
+	rPr.WriteString("<w:rPr>")
+
+	if bold {
+		rPr.WriteString("<w:b/>")
+	}
+	if italic {
+		rPr.WriteString("<w:i/>")
+	}
+	if underline {
+		rPr.WriteString(`<w:u w:val="single"/>`)
+	}
+	if strike {
+		rPr.WriteString("<w:strike/>")
+	}
+	if highlight {
+		rPr.WriteString(`<w:highlight w:val="yellow"/>`)
+	}
+	if isCode {
+		rPr.WriteString(`<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/>`)
+		rPr.WriteString(`<w:shd w:fill="F1F5F9"/>`)
+	}
+	if color != "" {
+		rPr.WriteString(fmt.Sprintf(`<w:color w:val="%s"/>`, color))
+	}
+	if fontSize > 0 {
+		rPr.WriteString(fmt.Sprintf(`<w:sz w:val="%d"/>`, fontSize))
+	}
+
+	rPr.WriteString("</w:rPr>")
+	escapedText := xmlEscape(text)
+	sb.WriteString(fmt.Sprintf(`<w:r>%s<w:t xml:space="preserve">%s</w:t></w:r>`, rPr.String(), escapedText))
+}
+
+func buildSimpleParagraph(text, style, align string, bold, italic, underline bool, color string, fontSize int) string {
 	var pPr strings.Builder
 	pPr.WriteString("<w:pPr>")
 	if style != "" {

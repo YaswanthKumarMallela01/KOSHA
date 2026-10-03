@@ -90,12 +90,21 @@ func renderGlassPanel(content string, width, height int) string {
 		panelHeight = 3
 	}
 
-	boxStyle := lipgloss.NewStyle().
-		Background(ColorBackground).
-		Width(panelWidth).
-		Height(panelHeight)
-
-	return boxStyle.Render(content)
+	lines := strings.Split(content, "\n")
+	bgStyle := lipgloss.NewStyle().Background(ColorBackground)
+	var paddedLines []string
+	for i := 0; i < panelHeight; i++ {
+		line := ""
+		if i < len(lines) {
+			line = lines[i]
+		}
+		w := lipgloss.Width(line)
+		if w < panelWidth {
+			line = line + strings.Repeat(" ", panelWidth-w)
+		}
+		paddedLines = append(paddedLines, bgStyle.Render(line))
+	}
+	return strings.Join(paddedLines, "\n")
 }
 
 func renderBackground(width, height int) string {

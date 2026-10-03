@@ -175,7 +175,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if msg.String() == "ctrl+l" && !a.locked {
 			a.lock()
-			return a, nil
+			return a, tea.ClearScreen
 		}
 
 		if msg.String() == "?" && !a.locked && a.screen != ScreenNoteEdit {
@@ -218,6 +218,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		if a.lockMinutes > 0 && !a.locked && time.Since(a.lastActivity) > time.Duration(a.lockMinutes)*time.Minute {
 			a.lock()
+			return a, tea.ClearScreen
 		}
 		cmds = append(cmds, tea.Tick(time.Minute, func(t time.Time) tea.Msg {
 			return tickMsg(t)
@@ -810,6 +811,17 @@ func (a *App) View() string {
 		return renderHelpOverlay(a.width, a.height)
 	}
 
+	header := renderHeader(a.getCurrentBreadcrumb(), a.width, a.locked)
+	footer := renderFooter(a.getFooterHints(), a.statusMsg, a.width)
+
+	headerHeight := lipgloss.Height(header)
+	footerHeight := lipgloss.Height(footer)
+
+	availHeight := a.height - headerHeight - footerHeight
+	if availHeight < 3 {
+		availHeight = 3
+	}
+
 	var content string
 	switch a.screen {
 	case ScreenLibrary:
@@ -831,20 +843,9 @@ func (a *App) View() string {
 	case ScreenTagFilter:
 		content = a.tagModel.View()
 	case ScreenNewItem, ScreenRename:
-		content = lipgloss.Place(a.width-8, a.height-8, lipgloss.Center, lipgloss.Center, a.inputOverlay.View())
+		content = lipgloss.Place(a.width-2, availHeight, lipgloss.Center, lipgloss.Center, a.inputOverlay.View())
 	case ScreenConfirmDelete:
-		content = lipgloss.Place(a.width-8, a.height-8, lipgloss.Center, lipgloss.Center, a.confirmDialog.View())
-	}
-
-	header := renderHeader(a.getCurrentBreadcrumb(), a.width, a.locked)
-	footer := renderFooter(a.getFooterHints(), a.statusMsg, a.width)
-
-	headerHeight := lipgloss.Height(header)
-	footerHeight := lipgloss.Height(footer)
-
-	availHeight := a.height - headerHeight - footerHeight
-	if availHeight < 3 {
-		availHeight = 3
+		content = lipgloss.Place(a.width-2, availHeight, lipgloss.Center, lipgloss.Center, a.confirmDialog.View())
 	}
 
 	panel := renderGlassPanel(content, a.width, availHeight)
@@ -992,9 +993,15 @@ func (a *App) getFooterHints() []KeyHint {
 			{Key: "Esc", Description: "Cancel"},
 		}
 	case ScreenConfirmDelete:
+		if strings.HasPrefix(a.confirmDialog.Action, "export") {
+			return []KeyHint{
+				{Key: "Enter", Description: "Confirm Export"},
+				{Key: "Esc", Description: "Cancel"},
+			}
+		}
 		return []KeyHint{
-			{Key: "Y", Description: "Yes, Delete"},
-			{Key: "N / Esc", Description: "Cancel"},
+			{Key: "Enter", Description: "Confirm Delete"},
+			{Key: "Esc", Description: "Cancel"},
 		}
 	case ScreenNoteEdit:
 		return []KeyHint{

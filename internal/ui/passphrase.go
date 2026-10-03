@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -19,11 +20,15 @@ type PassphraseModel struct {
 func NewPassphraseModel() PassphraseModel {
 	ti := textinput.New()
 	ti.Placeholder = "Enter master passphrase..."
+	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(ColorMutedText)
 	ti.EchoMode = textinput.EchoPassword
 	ti.EchoCharacter = '•'
+	ti.Prompt = "  > "
+	ti.PromptStyle = lipgloss.NewStyle().Foreground(ColorSaffron).Bold(true)
+	ti.TextStyle = lipgloss.NewStyle().Foreground(ColorBodyText)
 	ti.Focus()
 	ti.CharLimit = 100
-	ti.Width = 35
+	ti.Width = 36
 
 	return PassphraseModel{
 		input: ti,
@@ -64,7 +69,7 @@ func (m PassphraseModel) Update(msg tea.Msg) (PassphraseModel, tea.Cmd) {
 				m.Reset()
 				m.attempts = 0
 				m.app.statusMsg = "Vault unlocked"
-				return m, nil
+				return m, tea.ClearScreen
 			}
 
 			// Failed
@@ -87,29 +92,89 @@ func (m PassphraseModel) Update(msg tea.Msg) (PassphraseModel, tea.Cmd) {
 }
 
 func (m PassphraseModel) View(width, height int) string {
-	boxWidth := 46
-	boxStyle := lipgloss.NewStyle().
-		Background(ColorGlassFill).
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(ColorGlassBorder).
-		Padding(2, 4).
-		Width(boxWidth)
+	if width < 50 {
+		width = 50
+	}
+	if height < 15 {
+		height = 15
+	}
 
-	logo := SaffronStyle.Render("       कोश  K O S H A       \n   Encrypted Notes Vault    ")
+	boxWidth := 56
+	boxStyle := lipgloss.NewStyle().
+		Background(ColorBackground).
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(ColorSaffron).
+		Padding(1, 4).
+		Width(boxWidth).
+		Align(lipgloss.Center)
+
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(ColorSaffron)
+	subStyle := lipgloss.NewStyle().Foreground(ColorMutedText)
+
+	logo := titleStyle.Render("⚡  कोश   K O S H A  ⚡") + "\n" + subStyle.Render("[ Encrypted Notes Vault ]")
 
 	errLine := ""
 	if m.errMsg != "" {
-		errLine = ErrorStyle.Render(m.errMsg) + "\n\n"
+		errLine = "\n" + ErrorStyle.Render(m.errMsg)
 	}
 
-	content := fmt.Sprintf("%s\n\n%s%s\n%s\n\n%s",
+	promptText := lipgloss.NewStyle().Foreground(ColorBodyText).Render("Vault is locked. Enter your master passphrase:")
+	hintText := MutedStyle.Render("[Enter] Unlock   •   [Ctrl+C] Exit")
+
+	content := fmt.Sprintf("%s\n\n%s\n\n%s\n\n%s%s",
 		logo,
-		errLine,
-		MutedStyle.Render("Vault is locked. Enter your master passphrase:"),
+		promptText,
 		m.input.View(),
-		MutedStyle.Render("[Enter] Unlock  [Ctrl+C] Exit"),
+		hintText,
+		errLine,
 	)
 
 	renderedBox := boxStyle.Render(content)
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, renderedBox)
+	boxLines := strings.Split(renderedBox, "\n")
+	boxH := len(boxLines)
+	boxW := boxWidth + 2 // including border
+
+	topPad := (height - boxH) / 2
+	if topPad < 0 {
+		topPad = 0
+	}
+
+	leftPad := (width - boxW) / 2
+	if leftPad < 0 {
+		leftPad = 0
+	}
+
+	blankRow := strings.Repeat(" ", width)
+	bgStyle := lipgloss.NewStyle().Background(ColorBackground).Foreground(ColorBodyText)
+
+	var fullScreen []string
+
+	// 1. Top padding rows (full width pitch black)
+	for i := 0; i < topPad; i++ {
+		fullScreen = append(fullScreen, bgStyle.Render(blankRow))
+	}
+
+	// 2. Box rows (padded on left and right to exact width)
+	for _, bLine := range boxLines {
+		bLen := lipgloss.Width(bLine)
+		rightPad := width - leftPad - bLen
+		if rightPad < 0 {
+			rightPad = 0
+		}
+		rowStr := strings.Repeat(" ", leftPad) + bLine + strings.Repeat(" ", rightPad)
+		if lipgloss.Width(rowStr) < width {
+			rowStr += strings.Repeat(" ", width-lipgloss.Width(rowStr))
+		}
+		fullScreen = append(fullScreen, bgStyle.Render(rowStr))
+	}
+
+	// 3. Bottom padding rows down to exact height
+	for len(fullScreen) < height {
+		fullScreen = append(fullScreen, bgStyle.Render(blankRow))
+	}
+	if len(fullScreen) > height {
+		fullScreen = fullScreen[:height]
+	}
+
+	return strings.Join(fullScreen, "\n")
 }

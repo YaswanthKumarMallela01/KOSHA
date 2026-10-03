@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -76,7 +77,11 @@ func NewConfirmDialogModel() ConfirmDialogModel {
 	ti := textinput.New()
 	ti.EchoMode = textinput.EchoPassword
 	ti.EchoCharacter = '•'
+	ti.Prompt = "  > "
+	ti.PromptStyle = lipgloss.NewStyle().Foreground(ColorSaffron).Bold(true)
+	ti.TextStyle = lipgloss.NewStyle().Foreground(ColorBodyText)
 	ti.Placeholder = "Enter master passphrase..."
+	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(ColorMutedText)
 	ti.CharLimit = 100
 	ti.Width = 36
 	return ConfirmDialogModel{
@@ -105,18 +110,39 @@ func (m ConfirmDialogModel) Update(msg tea.Msg) (ConfirmDialogModel, tea.Cmd) {
 }
 
 func (m ConfirmDialogModel) View() string {
+	borderColor := ColorError
+	titleStyle := ErrorStyle
+	headerText := "⚠ CONFIRM DELETION (PASSPHRASE REQUIRED)"
+	btnText := "Confirm Delete"
+
+	if strings.HasPrefix(m.Action, "export") {
+		borderColor = ColorSaffron
+		titleStyle = SaffronStyle
+		if m.Action == "export_pdf" {
+			headerText = "🔐 AUTHENTICATE EXPORT — PDF DOCUMENT"
+			btnText = "Export PDF"
+		} else if m.Action == "export_docx" {
+			headerText = "🔐 AUTHENTICATE EXPORT — WORD (.DOCX)"
+			btnText = "Export Word"
+		} else {
+			headerText = "🔐 AUTHENTICATE EXPORT (PASSPHRASE REQUIRED)"
+			btnText = "Confirm Export"
+		}
+	}
+
 	boxStyle := lipgloss.NewStyle().
-		Background(ColorGlassFill).
+		Background(ColorBackground).
 		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(ColorError).
-		Padding(1, 3).
-		Width(56)
+		BorderForeground(borderColor).
+		Padding(1, 4).
+		Width(60).
+		Align(lipgloss.Center)
 
 	content := fmt.Sprintf("%s\n\n%s\n\n%s\n\n%s",
-		ErrorStyle.Render("⚠ CONFIRM DELETION (PASSPHRASE REQUIRED)"),
-		m.Message,
+		titleStyle.Render(headerText),
+		lipgloss.NewStyle().Foreground(ColorBodyText).Render(m.Message),
 		m.PasswordInput.View(),
-		MutedStyle.Render("[Enter] Confirm Delete  •  [Esc] Cancel"),
+		MutedStyle.Render(fmt.Sprintf("[Enter] %s  •  [Esc] Cancel", btnText)),
 	)
 
 	return boxStyle.Render(content)
