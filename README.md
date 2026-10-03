@@ -89,11 +89,24 @@ Inside the editor, press **`Ctrl+G`** to automatically copy-edit spelling, gramm
 ### Reading & Editing
 - **`Enter` (on Vault)**: Open **Peaceful Read Mode** with rendered typography
 - **`E` (in Read Mode or on Vault)**: Switch to **Coding Editor** to write notes
+- **Two-Finger / Wheel Scroll**: Smooth mouse trackpad scrolling in both Read and Edit modes
 - **`Ctrl+R` (in Editor)**: Toggle back into Peaceful Read Mode
 - **`Ctrl+F`**: Open formatting toolbar
+- **`Ctrl+I` (in Editor)**: Insert embedded image `!img[alt](path|align|width%)` with alignment & sizing
+- **`Ctrl+P` (in Read/Edit Mode)**: Export note to styled **PDF** (passphrase-protected)
+- **`Ctrl+W` (in Read/Edit Mode)**: Export note to Microsoft **Word (.docx)** (passphrase-protected)
 - **`Ctrl+G`**: Run Gemini AI copy-editor & smart highlights
 - **`Ctrl+S`**: Save manual snapshot of vault file
 - **`Esc`**: Save note and exit back to the side-wise vaults shelf
+
+---
+
+## 🖼️ Image Support & Rich Formatting
+
+- **Embedded Images**: Insert images using the syntax `!img[caption](filepath|align|width%)` (e.g. `!img[Diagram](arch.png|center|80%)`). Supports `left`, `center`, and `right` alignments with custom percentage sizing. Rendered neatly with framed symbol placeholders in terminal read mode and included in exports.
+- **Electric Blue Links**: Pasted URLs (`https://...`, `http://...`, `www....`), wiki links (`[[...]]`), and Markdown links (`[text](url)`) automatically turn vibrant blue (`#38BDF8`) with underline in both edit and read modes.
+- **High-Visibility Typography**: Clean, high-contrast formatting (pure white bold, soft lavender italic, saffron highlights, gold underlines, and distinct code blocks) that stands out clearly against the pitch-black backdrop.
+- **Passphrase-Protected Export**: Export full books, chapters, or individual notes to standard **Markdown**, professional **PDF**, or Microsoft **Word (.docx)** with identical alignment and formatting preserved. All exports require master passphrase authentication.
 
 ---
 
@@ -106,8 +119,8 @@ Inside the editor, press **`Ctrl+G`** to automatically copy-edit spelling, gramm
 | `kosha add "text"` | Quick capture a note directly to your vault without opening the TUI |
 | `echo "idea" \| kosha add` | Pipe text from stdin directly into quick capture |
 | `kosha search "query"` | Launch directly into search mode with prefilled query |
-| `kosha export <book>` | Export book notes to Markdown directory |
-| `kosha version` | Print version |
+| `kosha export <book> [--format pdf\|word\|md] [--out <dir>]` | Export book notes to PDF, Word, or Markdown |
+| `kosha version` | Print version (v0.3.0) |
 | `kosha help` | Show command reference |
 
 ---

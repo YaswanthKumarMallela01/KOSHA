@@ -45,14 +45,24 @@ type ChapterPayload struct {
 	ProcessedHashes map[string]bool `json:"processedHashes,omitempty"`
 }
 
+// NoteImage represents an embedded image in a note.
+type NoteImage struct {
+	ID    string `json:"id"`
+	Path  string `json:"path"`  // absolute or relative file path
+	Alt   string `json:"alt"`   // alt text / caption
+	Align string `json:"align"` // "left", "center", "right"
+	Width int    `json:"width"` // width percentage (10-100), 0 = auto
+}
+
 // Note represents an individual note within a chapter.
 type Note struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	Body      string    `json:"body"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
-	Pinned    bool      `json:"pinned"`
+	ID        string       `json:"id"`
+	Title     string       `json:"title"`
+	Body      string       `json:"body"`
+	CreatedAt time.Time    `json:"createdAt"`
+	UpdatedAt time.Time    `json:"updatedAt"`
+	Pinned    bool         `json:"pinned"`
+	Images    []*NoteImage `json:"images,omitempty"`
 }
 
 // Block represents a single piece of content (paragraph, heading, etc) for AI processing.

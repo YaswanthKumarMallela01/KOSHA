@@ -249,20 +249,10 @@ func (b *Buffer) MoveCursor(dx, dy int) {
 	
 	b.cursorX += dx
 	if b.cursorX < 0 {
-		if b.cursorY > 0 && dx < 0 {
-			b.cursorY--
-			b.cursorX = len(b.lines[b.cursorY])
-		} else {
-			b.cursorX = 0
-		}
+		b.cursorX = 0
 	}
 	if b.cursorX > len(b.lines[b.cursorY]) {
-		if b.cursorY < len(b.lines)-1 && dx > 0 {
-			b.cursorY++
-			b.cursorX = 0
-		} else {
-			b.cursorX = len(b.lines[b.cursorY])
-		}
+		b.cursorX = len(b.lines[b.cursorY])
 	}
 }
 
@@ -524,6 +514,13 @@ func (m *Model) Focus() {
 
 func (m *Model) Blur() {
 	m.focused = false
+}
+
+// InsertText inserts text at the current cursor position.
+func (m *Model) InsertText(s string) {
+	m.buffer.InsertString(s)
+	m.dirty = true
+	m.lastEdit = time.Now()
 }
 
 type autoSaveMsg struct{}
@@ -795,14 +792,60 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case tea.MouseMsg:
+		if !m.focused {
+			return m, nil
+		}
+		switch msg.Type {
+		case tea.MouseWheelUp:
+			if m.mode == PreviewMode {
+				m.scrollOffset -= 3
+				if m.scrollOffset < 0 {
+					m.scrollOffset = 0
+				}
+			} else {
+				m.buffer.MoveCursor(0, -3)
+			}
+		case tea.MouseWheelDown:
+			if m.mode == PreviewMode {
+				m.scrollOffset += 3
+			} else {
+				m.buffer.MoveCursor(0, 3)
+			}
+		}
+	}
+
+	if m.mode == EditMode {
+		contentWidth := m.width - 9
+		if contentWidth < 10 {
+			contentWidth = 10
+		}
+		cursorVisualY := 0
+		for i, lineRunes := range m.buffer.lines {
+			rows := len(lineRunes) / contentWidth
+			if len(lineRunes)%contentWidth != 0 || len(lineRunes) == 0 {
+				rows++
+			}
+			if i == m.buffer.cursorY {
+				cx := m.buffer.cursorX
+				if cx == len(lineRunes) && cx > 0 && cx%contentWidth == 0 {
+					cursorVisualY += (cx / contentWidth) - 1
+				} else {
+					cursorVisualY += cx / contentWidth
+				}
+				break
+			}
+			cursorVisualY += rows
+		}
+
 		maxLines := m.height - 3
 		if maxLines < 3 {
 			maxLines = 3
 		}
-		if m.buffer.cursorY < m.scrollOffset {
-			m.scrollOffset = m.buffer.cursorY
-		} else if m.buffer.cursorY >= m.scrollOffset+maxLines {
-			m.scrollOffset = m.buffer.cursorY - maxLines + 1
+		if cursorVisualY < m.scrollOffset {
+			m.scrollOffset = cursorVisualY
+		} else if cursorVisualY >= m.scrollOffset+maxLines {
+			m.scrollOffset = cursorVisualY - maxLines + 1
 		}
 	}
 
@@ -860,32 +903,100 @@ func (m Model) View() string {
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#606880"))
 	selectionStyle := lipgloss.NewStyle().Background(lipgloss.Color("#E58BB0")).Foreground(lipgloss.Color("#000000"))
 	cursorStyle := lipgloss.NewStyle().Background(lipgloss.Color("#F5A623")).Foreground(lipgloss.Color("#000000"))
+	urlStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#38BDF8")).Underline(true)
 	
 	maxLines := m.height - 3
 	if maxLines < 3 {
 		maxLines = 3
 	}
 
-	startLine := m.scrollOffset
-	endLine := startLine + maxLines
-	if endLine > len(m.buffer.lines) {
-		endLine = len(m.buffer.lines)
+	contentWidth := m.width - 9
+	if contentWidth < 10 {
+		contentWidth = 10
 	}
 
-	for i := startLine; i < endLine; i++ {
-		lineRunes := m.buffer.lines[i]
+	type vRow struct {
+		bufIdx   int
+		runes    []rune
+		isCont   bool
+		startCol int
+	}
+	var visualRows []vRow
+
+	for i, lineRunes := range m.buffer.lines {
+		if len(lineRunes) == 0 {
+			visualRows = append(visualRows, vRow{bufIdx: i, runes: []rune{}, isCont: false, startCol: 0})
+			continue
+		}
+		for start := 0; start < len(lineRunes); start += contentWidth {
+			end := start + contentWidth
+			if end > len(lineRunes) {
+				end = len(lineRunes)
+			}
+			visualRows = append(visualRows, vRow{
+				bufIdx:   i,
+				runes:    lineRunes[start:end],
+				isCont:   start > 0,
+				startCol: start,
+			})
+		}
+	}
+
+	startRow := m.scrollOffset
+	endRow := startRow + maxLines
+	if endRow > len(visualRows) {
+		endRow = len(visualRows)
+	}
+
+	for idx := startRow; idx < endRow; idx++ {
+		vr := visualRows[idx]
+		i := vr.bufIdx
 		
 		isCursorLine := (i == m.buffer.cursorY)
-		if isCursorLine {
-			sb.WriteString(cursorLineNumberStyle.Render(fmt.Sprintf("%d", i+1)))
-			sb.WriteString(dividerStyle.Render(" │ "))
+		
+		if !vr.isCont {
+			if isCursorLine {
+				sb.WriteString(cursorLineNumberStyle.Render(fmt.Sprintf("%d", i+1)))
+				sb.WriteString(dividerStyle.Render(" │ "))
+			} else {
+				sb.WriteString(lineNumberStyle.Render(fmt.Sprintf("%d", i+1)))
+				sb.WriteString(dividerStyle.Render(" │ "))
+			}
 		} else {
-			sb.WriteString(lineNumberStyle.Render(fmt.Sprintf("%d", i+1)))
-			sb.WriteString(dividerStyle.Render(" │ "))
+			sb.WriteString(dimStyle.Render("   "))
+			sb.WriteString(dividerStyle.Render(" · "))
+		}
+
+		// Highlight pasted URLs in bright blue with underline
+		isURLMap := make(map[int]bool)
+		lineRunesFull := m.buffer.lines[i]
+		for pos := 0; pos < len(lineRunesFull); {
+			subLower := strings.ToLower(string(lineRunesFull[pos:]))
+			if strings.HasPrefix(subLower, "http://") || strings.HasPrefix(subLower, "https://") || strings.HasPrefix(subLower, "www.") {
+				end := pos
+				for end < len(lineRunesFull) && lineRunesFull[end] > ' ' && lineRunesFull[end] != ')' && lineRunesFull[end] != ']' && lineRunesFull[end] != '>' {
+					end++
+				}
+				for p := pos; p < end; p++ {
+					isURLMap[p] = true
+				}
+				pos = end
+			} else {
+				pos++
+			}
 		}
 
 		var lineStr strings.Builder
-		for j := 0; j <= len(lineRunes); j++ {
+		isLastRowOfLine := idx == len(visualRows)-1 || visualRows[idx+1].bufIdx != i
+		
+		renderLen := len(vr.runes)
+		if isLastRowOfLine {
+			renderLen++
+		}
+
+		for jOffset := 0; jOffset < renderLen; jOffset++ {
+			j := vr.startCol + jOffset
+			
 			isSelected := false
 			if m.buffer.hasSelection {
 				sStart, sEnd := m.buffer.getSelectionRange()
@@ -909,8 +1020,8 @@ func (m Model) View() string {
 			isCursor := m.focused && i == m.buffer.cursorY && j == m.buffer.cursorX
 
 			var r rune
-			if j < len(lineRunes) {
-				r = lineRunes[j]
+			if jOffset < len(vr.runes) {
+				r = vr.runes[jOffset]
 			} else {
 				r = ' '
 				if !isCursor && !isSelected {
@@ -923,6 +1034,8 @@ func (m Model) View() string {
 				charStr = cursorStyle.Render(charStr)
 			} else if isSelected {
 				charStr = selectionStyle.Render(charStr)
+			} else if isURLMap[j] {
+				charStr = urlStyle.Render(charStr)
 			} else {
 				if r == '*' || r == '_' || r == '~' || r == '=' || r == '^' || r == '#' || r == '`' || r == '>' || r == ':' {
 					charStr = dimStyle.Render(charStr)
@@ -934,15 +1047,17 @@ func (m Model) View() string {
 		}
 		
 		sb.WriteString(lineStr.String())
-		if i < endLine-1 {
+		if idx < endRow-1 {
 			sb.WriteString("\n")
 		}
 	}
 	
 	// Pad empty lines so the text editor area is fully expanded and the status bar is pinned at the bottom!
-	linesRendered := endLine - startLine
+	linesRendered := endRow - startRow
 	for i := linesRendered; i < maxLines; i++ {
-		sb.WriteString("\n")
+		if sb.Len() > 0 {
+			sb.WriteString("\n")
+		}
 		sb.WriteString(dividerStyle.Render("     │ "))
 	}
 	

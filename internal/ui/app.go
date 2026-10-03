@@ -16,6 +16,7 @@ import (
 	"github.com/YaswanthKumarMallela01/kosha/internal/config"
 	"github.com/YaswanthKumarMallela01/kosha/internal/crypto"
 	"github.com/YaswanthKumarMallela01/kosha/internal/editor"
+	"github.com/YaswanthKumarMallela01/kosha/internal/export"
 	"github.com/YaswanthKumarMallela01/kosha/internal/markup"
 	"github.com/YaswanthKumarMallela01/kosha/internal/model"
 	"github.com/YaswanthKumarMallela01/kosha/internal/search"
@@ -323,6 +324,31 @@ func (a *App) updateEditor(msg tea.Msg) tea.Cmd {
 				a.statusMsg = "Chapter snapshot saved"
 			}
 			return nil
+		case "ctrl+i":
+			// Image insertion - open input overlay to get image path
+			a.inputOverlay.Open("Insert image — enter file path:", "", "insert_image", "")
+			a.pushScreen(ScreenNewItem)
+			return nil
+		case "ctrl+p":
+			// Export PDF
+			if a.currentNote != nil {
+				a.currentNote.Body = a.editorModel.Content()
+				a.currentNote.UpdatedAt = time.Now()
+				_ = a.library.SaveChapter(a.currentBook.Slug, a.currentChapter)
+				a.confirmDialog.Open("Enter passphrase to export as PDF:", "export_pdf", "")
+				a.pushScreen(ScreenConfirmDelete)
+			}
+			return nil
+		case "ctrl+w":
+			// Export DOCX
+			if a.currentNote != nil {
+				a.currentNote.Body = a.editorModel.Content()
+				a.currentNote.UpdatedAt = time.Now()
+				_ = a.library.SaveChapter(a.currentBook.Slug, a.currentChapter)
+				a.confirmDialog.Open("Enter passphrase to export as Word (.docx):", "export_docx", "")
+				a.pushScreen(ScreenConfirmDelete)
+			}
+			return nil
 		}
 	}
 
@@ -382,6 +408,12 @@ func (a *App) updateNewItem(msg tea.Msg) tea.Cmd {
 						a.statusMsg = "Error creating vault: " + err.Error()
 					}
 				}
+				a.inputOverlay.Close()
+				a.popScreen()
+				return nil
+			case "insert_image":
+				// val is the file path; insert with center alignment and auto width
+				a.insertImage(val, filepath.Base(val), "center", 0)
 				a.inputOverlay.Close()
 				a.popScreen()
 				return nil
@@ -478,6 +510,10 @@ func (a *App) updateConfirmDelete(msg tea.Msg) tea.Cmd {
 				_ = a.library.DeleteNote(a.currentBook.Slug, a.currentChapter.ID, a.confirmDialog.TargetID)
 				a.chapterList.Refresh()
 				a.statusMsg = "Note deleted successfully"
+			case "export_pdf":
+				a.exportCurrentNotePDF()
+			case "export_docx":
+				a.exportCurrentNoteDOCX()
 			}
 			a.confirmDialog.Close()
 			a.popScreen()
@@ -600,6 +636,74 @@ func (a *App) exportCurrentNote() {
 	md := fmt.Sprintf("# %s\n\n%s\n", a.currentNote.Title, markup.RenderToMarkdown(a.currentNote.Body))
 	_ = os.WriteFile(fn, []byte(md), 0600)
 	a.statusMsg = fmt.Sprintf("Exported note to %s", fn)
+}
+
+func (a *App) exportCurrentNotePDF() {
+	if a.currentNote == nil {
+		return
+	}
+	outDir := "."
+	if a.currentBook != nil {
+		outDir = filepath.Join(a.config.DataDir, "books", a.currentBook.Slug)
+		outDir = export.GetExportDir(outDir)
+	}
+	fn := filepath.Join(outDir, sanitizeForFilename(a.currentNote.Title)+".pdf")
+	if err := export.ExportNoteToPDF(a.currentNote, fn); err != nil {
+		a.statusMsg = fmt.Sprintf("PDF export error: %v", err)
+		return
+	}
+	a.statusMsg = fmt.Sprintf("✓ Exported PDF to %s", fn)
+}
+
+func (a *App) exportCurrentNoteDOCX() {
+	if a.currentNote == nil {
+		return
+	}
+	outDir := "."
+	if a.currentBook != nil {
+		outDir = filepath.Join(a.config.DataDir, "books", a.currentBook.Slug)
+		outDir = export.GetExportDir(outDir)
+	}
+	fn := filepath.Join(outDir, sanitizeForFilename(a.currentNote.Title)+".docx")
+	if err := export.ExportNoteToDOCX(a.currentNote, fn); err != nil {
+		a.statusMsg = fmt.Sprintf("DOCX export error: %v", err)
+		return
+	}
+	a.statusMsg = fmt.Sprintf("✓ Exported Word to %s", fn)
+}
+
+func sanitizeForFilename(name string) string {
+	r := strings.NewReplacer("/", "_", "\\", "_", ":", "_", "*", "_", "?", "_", "\"", "_", "<", "_", ">", "_", "|", "_", " ", "_")
+	s := r.Replace(name)
+	if len(s) > 50 {
+		s = s[:50]
+	}
+	return s
+}
+
+func (a *App) insertImage(path, alt, align string, widthPct int) {
+	if a.currentNote == nil || a.screen != ScreenNoteEdit {
+		return
+	}
+	widthStr := "auto"
+	if widthPct > 0 && widthPct <= 100 {
+		widthStr = fmt.Sprintf("%d%%", widthPct)
+	}
+	imgLine := fmt.Sprintf("\n!img[%s](%s|%s|%s)\n", alt, path, align, widthStr)
+
+	// Add image ref to the note's Images list
+	img := &model.NoteImage{
+		ID:    model.NewID(),
+		Path:  path,
+		Alt:   alt,
+		Align: align,
+		Width: widthPct,
+	}
+	a.currentNote.Images = append(a.currentNote.Images, img)
+
+	// Insert markup into editor
+	a.editorModel.InsertText(imgLine)
+	a.statusMsg = fmt.Sprintf("Image inserted: %s [%s, %s]", filepath.Base(path), align, widthStr)
 }
 
 func (a *App) triggerAIRefine() tea.Cmd {
@@ -873,6 +977,8 @@ func (a *App) getFooterHints() []KeyHint {
 		return []KeyHint{
 			{Key: "E", Description: "Edit Notes"},
 			{Key: "↑/↓ or J/K", Description: "Scroll"},
+			{Key: "Ctrl+P", Description: "Export PDF"},
+			{Key: "Ctrl+W", Description: "Export Word"},
 			{Key: "Esc", Description: "Back to Vaults"},
 		}
 	case ScreenNewItem:
@@ -895,8 +1001,10 @@ func (a *App) getFooterHints() []KeyHint {
 			{Key: "Ctrl+R", Description: "Read Mode"},
 			{Key: "Ctrl+F", Description: "Format"},
 			{Key: "Ctrl+G", Description: "AI Refine"},
-			{Key: "Ctrl+S", Description: "Snapshot"},
-			{Key: "Esc", Description: "Save & Exit to Vaults"},
+			{Key: "Ctrl+I", Description: "Image"},
+			{Key: "Ctrl+P", Description: "PDF"},
+			{Key: "Ctrl+W", Description: "Word"},
+			{Key: "Esc", Description: "Save & Exit"},
 		}
 	case ScreenSearch:
 		return []KeyHint{

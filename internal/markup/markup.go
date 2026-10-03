@@ -2,6 +2,7 @@ package markup
 
 import (
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -34,6 +35,7 @@ type Theme struct {
 	InlineCode        lipgloss.Style
 	Tag               lipgloss.Style
 	Link              lipgloss.Style
+	URLLink           lipgloss.Style
 }
 
 // NewDefaultTheme creates a theme with the default colors.
@@ -56,16 +58,17 @@ func NewDefaultTheme() *Theme {
 	t.Heading1 = lipgloss.NewStyle().Bold(true).Foreground(t.Saffron)
 	t.Heading2 = lipgloss.NewStyle().Bold(true).Foreground(t.BodyText)
 	t.Heading3 = lipgloss.NewStyle().Italic(true).Foreground(t.BodyText)
-	t.Bold = lipgloss.NewStyle().Bold(true)
-	t.Italic = lipgloss.NewStyle().Italic(true)
-	t.Underline = lipgloss.NewStyle().Underline(true)
-	t.Strikethrough = lipgloss.NewStyle().Strikethrough(true)
-	t.ImportantWord = lipgloss.NewStyle().Foreground(t.Saffron).Bold(true)
-	t.ImportantSentence = lipgloss.NewStyle().Foreground(t.Saffron).Underline(true)
+	t.Bold = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF"))
+	t.Italic = lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("#C4B5FD"))
+	t.Underline = lipgloss.NewStyle().Underline(true).Foreground(lipgloss.Color("#FBBF24"))
+	t.Strikethrough = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("#9CA3AF"))
+	t.ImportantWord = lipgloss.NewStyle().Foreground(lipgloss.Color("#FCD34D")).Bold(true).Background(lipgloss.Color("#1C1917"))
+	t.ImportantSentence = lipgloss.NewStyle().Foreground(lipgloss.Color("#F2A33A")).Underline(true).Bold(true)
 	t.Blockquote = lipgloss.NewStyle().Foreground(t.MutedText)
-	t.InlineCode = lipgloss.NewStyle().Background(t.GlassFill).Foreground(t.BodyText)
+	t.InlineCode = lipgloss.NewStyle().Background(lipgloss.Color("#1E293B")).Foreground(lipgloss.Color("#E2E8F0")).Padding(0, 1)
 	t.Tag = lipgloss.NewStyle().Foreground(t.LotusPink)
-	t.Link = lipgloss.NewStyle().Foreground(t.LotusPink).Underline(true)
+	t.Link = lipgloss.NewStyle().Foreground(lipgloss.Color("#38BDF8")).Underline(true)
+	t.URLLink = lipgloss.NewStyle().Foreground(lipgloss.Color("#38BDF8")).Underline(true)
 
 	return t
 }
@@ -173,6 +176,41 @@ func parseInline(text string) []*Node {
 			}
 		}
 
+		// Markdown link: [text](url)
+		if runes[i] == '[' && (i+1 >= length || runes[i+1] != '[') {
+			closeBracket := findEnd(runes, i+1, "](")
+			if closeBracket != -1 {
+				closeParen := findEnd(runes, closeBracket+2, ")")
+				if closeParen != -1 {
+					anchor := string(runes[i+1 : closeBracket])
+					urlStr := string(runes[closeBracket+2 : closeParen])
+					nodes = append(nodes, &Node{
+						Type:    "url",
+						Content: anchor + " (" + urlStr + ")",
+					})
+					i = closeParen + 1
+					continue
+				}
+			}
+		}
+
+		// URL detection (http:// or https:// or www.)
+		isHTTP := i+7 <= length && strings.ToLower(string(runes[i:i+7])) == "http://"
+		isHTTPS := i+8 <= length && strings.ToLower(string(runes[i:i+8])) == "https://"
+		isWWW := i+4 <= length && strings.ToLower(string(runes[i:i+4])) == "www."
+		if isHTTP || isHTTPS || isWWW {
+			end := i
+			for end < length && !unicode.IsSpace(runes[end]) && runes[end] != ')' && runes[end] != ']' && runes[end] != '>' && runes[end] != '"' && runes[end] != '\'' {
+				end++
+			}
+			for end > i && (runes[end-1] == '.' || runes[end-1] == ',' || runes[end-1] == ';' || runes[end-1] == ':') {
+				end--
+			}
+			nodes = append(nodes, &Node{Type: "url", Content: string(runes[i:end])})
+			i = end
+			continue
+		}
+
 		// Text
 		end := i + 1
 		for end < length && runes[end] != '\\' && runes[end] != '*' && runes[end] != '_' && runes[end] != '~' && runes[end] != '=' && runes[end] != '^' && runes[end] != '[' && runes[end] != '`' && runes[end] != '#' {
@@ -235,7 +273,12 @@ func RenderToTerminal(input string, width int, theme *Theme) string {
 		var style lipgloss.Style
 		var prefix string
 
-		if strings.HasPrefix(line, "### ") {
+		// Image line: !img[alt](path|align|width%)
+		if strings.HasPrefix(strings.TrimSpace(line), "!img[") {
+			renderedLine = renderImagePlaceholder(line, width, theme)
+			out = append(out, renderedLine)
+			continue
+		} else if strings.HasPrefix(line, "### ") {
 			renderedLine = renderNodes(parseInline(line[4:]), theme)
 			style = theme.Heading3
 			renderedLine = style.Render("### " + renderedLine)
@@ -294,6 +337,8 @@ func renderNodes(nodes []*Node, theme *Theme) string {
 			sb.WriteString(theme.InlineCode.Render(n.Content))
 		case "tag":
 			sb.WriteString(theme.Tag.Render("#" + n.Content))
+		case "url":
+			sb.WriteString(theme.URLLink.Render(n.Content))
 		}
 	}
 	return sb.String()
@@ -364,6 +409,8 @@ func renderNodesMD(nodes []*Node) string {
 			sb.WriteString("`" + n.Content + "`")
 		case "tag":
 			sb.WriteString("#" + n.Content)
+		case "url":
+			sb.WriteString("[" + n.Content + "](" + n.Content + ")")
 		}
 	}
 	return sb.String()
@@ -405,9 +452,95 @@ func renderNodesStrip(nodes []*Node) string {
 			sb.WriteString(n.Content)
 		case "bold", "italic", "underline", "strike", "imp_word", "imp_sent":
 			sb.WriteString(renderNodesStrip(n.Children))
-		case "link", "code", "tag":
+		case "link", "code", "tag", "url":
 			sb.WriteString(n.Content)
 		}
 	}
 	return sb.String()
+}
+
+// ImageInfo holds parsed image markup data.
+type ImageInfo struct {
+	Alt   string
+	Path  string
+	Align string // "left", "center", "right"
+	Width string // e.g. "50%"
+}
+
+// ParseImageLine parses a line like !img[alt](path|align|width%)
+func ParseImageLine(line string) *ImageInfo {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "!img[") {
+		return nil
+	}
+
+	// Extract alt text between [ and ]
+	altEnd := strings.Index(line, "](")
+	if altEnd == -1 {
+		return nil
+	}
+	alt := line[5:altEnd]
+
+	// Extract params between ( and )
+	rest := line[altEnd+2:]
+	parenEnd := strings.LastIndex(rest, ")")
+	if parenEnd == -1 {
+		return nil
+	}
+	params := rest[:parenEnd]
+
+	parts := strings.Split(params, "|")
+	info := &ImageInfo{
+		Alt:   alt,
+		Path:  strings.TrimSpace(parts[0]),
+		Align: "left",
+		Width: "auto",
+	}
+
+	for _, p := range parts[1:] {
+		p = strings.TrimSpace(strings.ToLower(p))
+		if p == "left" || p == "center" || p == "right" {
+			info.Align = p
+		} else if strings.HasSuffix(p, "%") || p == "auto" {
+			info.Width = p
+		}
+	}
+
+	return info
+}
+
+// renderImagePlaceholder renders an image line as a styled terminal placeholder.
+func renderImagePlaceholder(line string, width int, theme *Theme) string {
+	info := ParseImageLine(line)
+	if info == nil {
+		return line
+	}
+
+	// Build a visual placeholder box
+	iconStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#60A5FA")).Bold(true)
+	pathStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#60A5FA")).Underline(true)
+	metaStyle := lipgloss.NewStyle().Foreground(theme.MutedText)
+
+	placeholder := iconStyle.Render("🖼  IMAGE") + "  " +
+		pathStyle.Render(info.Path)
+
+	if info.Alt != "" {
+		placeholder += "  " + metaStyle.Render("\""+info.Alt+"\"")
+	}
+	placeholder += "  " + metaStyle.Render("["+info.Align+", "+info.Width+"]")
+
+	boxStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#3A4180")).
+		Padding(0, 2).
+		Width(width - 4)
+
+	alignStyle := lipgloss.Left
+	if info.Align == "center" {
+		alignStyle = lipgloss.Center
+	} else if info.Align == "right" {
+		alignStyle = lipgloss.Right
+	}
+
+	return lipgloss.NewStyle().Width(width).Align(alignStyle).Render(boxStyle.Render(placeholder))
 }

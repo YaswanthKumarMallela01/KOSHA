@@ -117,8 +117,40 @@ func (m NoteViewModel) Update(msg tea.Msg) (NoteViewModel, tea.Cmd) {
 			if m.app.currentNote != nil {
 				m.app.exportCurrentNote()
 			}
+		case "ctrl+p":
+			// Export as PDF (requires password)
+			if m.app.currentNote != nil {
+				m.app.confirmDialog.Open("Enter passphrase to export as PDF:", "export_pdf", "")
+				m.app.pushScreen(ScreenConfirmDelete)
+			}
+		case "ctrl+w":
+			// Export as DOCX (requires password)
+			if m.app.currentNote != nil {
+				m.app.confirmDialog.Open("Enter passphrase to export as Word (.docx):", "export_docx", "")
+				m.app.pushScreen(ScreenConfirmDelete)
+			}
 		case "esc", "backspace":
 			m.app.popScreen()
+		}
+	case tea.MouseMsg:
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			m.scrollOff -= 3
+			if m.scrollOff < 0 {
+				m.scrollOff = 0
+			}
+		case tea.MouseButtonWheelDown:
+			m.scrollOff += 3
+		default:
+			switch msg.Type {
+			case tea.MouseWheelUp:
+				m.scrollOff -= 3
+				if m.scrollOff < 0 {
+					m.scrollOff = 0
+				}
+			case tea.MouseWheelDown:
+				m.scrollOff += 3
+			}
 		}
 	}
 	return m, nil

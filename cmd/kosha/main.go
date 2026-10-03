@@ -15,13 +15,14 @@ import (
 	"github.com/YaswanthKumarMallela01/kosha/internal/ai"
 	"github.com/YaswanthKumarMallela01/kosha/internal/config"
 	"github.com/YaswanthKumarMallela01/kosha/internal/crypto"
+	"github.com/YaswanthKumarMallela01/kosha/internal/export"
 	"github.com/YaswanthKumarMallela01/kosha/internal/markup"
 	"github.com/YaswanthKumarMallela01/kosha/internal/search"
 	"github.com/YaswanthKumarMallela01/kosha/internal/store"
 	"github.com/YaswanthKumarMallela01/kosha/internal/ui"
 )
 
-const version = "0.2.1"
+const version = "0.3.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -239,15 +240,21 @@ func runAdd() {
 
 func runExport() {
 	if len(os.Args) < 3 {
-		fmt.Fprintln(os.Stderr, "Usage: kosha export <book-slug> [--chapter <title>] [--out <dir>]")
+		fmt.Fprintln(os.Stderr, "Usage: kosha export <book-slug> [--format pdf|word|md] [--chapter <title>] [--out <dir>]")
 		os.Exit(1)
 	}
 
 	bookSlug := os.Args[2]
 	var chapterTitle, outDir string
+	format := "md"
 
 	for i := 3; i < len(os.Args); i++ {
 		switch os.Args[i] {
+		case "--format", "-f":
+			if i+1 < len(os.Args) {
+				format = strings.ToLower(os.Args[i+1])
+				i++
+			}
 		case "--chapter":
 			if i+1 < len(os.Args) {
 				chapterTitle = os.Args[i+1]
@@ -291,22 +298,37 @@ func runExport() {
 		}
 
 		for _, note := range ch.Notes {
-			filename := fmt.Sprintf("%s/%s_%s.md", outDir, bookSlug, sanitizeFilename(note.Title))
-			md := fmt.Sprintf("# %s\n\n", note.Title)
-			md += markup.RenderToMarkdown(note.Body)
-			md += fmt.Sprintf("\n\n---\n*Created: %s | Updated: %s*\n",
-				note.CreatedAt.Format("2006-01-02 15:04"),
-				note.UpdatedAt.Format("2006-01-02 15:04"))
+			switch format {
+			case "pdf":
+				filename := fmt.Sprintf("%s/%s_%s.pdf", outDir, bookSlug, sanitizeFilename(note.Title))
+				if err := export.ExportNoteToPDF(note, filename); err != nil {
+					fmt.Fprintf(os.Stderr, "Error exporting %s to PDF: %v\n", filename, err)
+					continue
+				}
+			case "word", "docx":
+				filename := fmt.Sprintf("%s/%s_%s.docx", outDir, bookSlug, sanitizeFilename(note.Title))
+				if err := export.ExportNoteToDOCX(note, filename); err != nil {
+					fmt.Fprintf(os.Stderr, "Error exporting %s to DOCX: %v\n", filename, err)
+					continue
+				}
+			default:
+				filename := fmt.Sprintf("%s/%s_%s.md", outDir, bookSlug, sanitizeFilename(note.Title))
+				md := fmt.Sprintf("# %s\n\n", note.Title)
+				md += markup.RenderToMarkdown(note.Body)
+				md += fmt.Sprintf("\n\n---\n*Created: %s | Updated: %s*\n",
+					note.CreatedAt.Format("2006-01-02 15:04"),
+					note.UpdatedAt.Format("2006-01-02 15:04"))
 
-			if err := os.WriteFile(filename, []byte(md), 0600); err != nil {
-				fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", filename, err)
-				continue
+				if err := os.WriteFile(filename, []byte(md), 0600); err != nil {
+					fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", filename, err)
+					continue
+				}
 			}
 			exported++
 		}
 	}
 
-	fmt.Printf("✓ Exported %d notes to %s\n", exported, outDir)
+	fmt.Printf("✓ Exported %d notes [%s] to %s\n", exported, strings.ToUpper(format), outDir)
 }
 
 func sanitizeFilename(name string) string {

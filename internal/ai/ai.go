@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,7 +24,7 @@ type Client struct {
 }
 
 func NewClient(apiKey, modelName string) *Client {
-	timeout := 30 * time.Second
+	timeout := 60 * time.Second
 	return &Client{
 		apiKey:     apiKey,
 		model:      modelName,
@@ -112,9 +113,11 @@ func (c *Client) RefineBlocks(ctx context.Context, blocks []BlockRequest) ([]Blo
 	cleanModel := strings.TrimPrefix(c.model, "models/")
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", cleanModel, c.apiKey)
 
+	time.Sleep(500 * time.Millisecond)
+
 	var resp *http.Response
 	var lastErr error
-	for retries := 0; retries < 3; retries++ {
+	for retries := 0; retries < 5; retries++ {
 		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(reqJSON))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create http request: %w", err)
@@ -124,14 +127,40 @@ func (c *Client) RefineBlocks(ctx context.Context, blocks []BlockRequest) ([]Blo
 		resp, err = c.httpClient.Do(httpReq)
 		if err != nil {
 			lastErr = err
-			time.Sleep(time.Duration(1<<retries) * time.Second)
+			backoff := time.Duration(2<<retries) * time.Second
+			if backoff > 30*time.Second {
+				backoff = 30 * time.Second
+			}
+			time.Sleep(backoff)
 			continue
 		}
 
-		if (resp.StatusCode == 429 || resp.StatusCode == 503) && retries < 2 {
+		if (resp.StatusCode == 429 || resp.StatusCode == 503) && retries < 4 {
+			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
+
+			backoff := time.Duration(2<<retries) * time.Second
+			if backoff > 30*time.Second {
+				backoff = 30 * time.Second
+			}
+
+			if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
+				if sec, err := strconv.Atoi(strings.TrimSpace(retryAfter)); err == nil && sec > 0 {
+					backoff = time.Duration(sec) * time.Second
+				} else if d, err := time.ParseDuration(strings.TrimSpace(retryAfter)); err == nil && d > 0 {
+					backoff = d
+				}
+			} else if len(body) > 0 {
+				re := regexp.MustCompile(`(?i)(?:retryDelay["']?\s*:\s*["']?|retry[\s_-]?after["':\s]+)(\d+)s?`)
+				if m := re.FindSubmatch(body); len(m) > 1 {
+					if sec, err := strconv.Atoi(string(m[1])); err == nil && sec > 0 {
+						backoff = time.Duration(sec) * time.Second
+					}
+				}
+			}
+
 			select {
-			case <-time.After(time.Duration(1<<retries) * time.Second):
+			case <-time.After(backoff):
 				continue
 			case <-ctx.Done():
 				return nil, ctx.Err()
