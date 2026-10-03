@@ -111,7 +111,7 @@ func (m PassphraseModel) View(width, height int) string {
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(ColorSaffron)
 	subStyle := lipgloss.NewStyle().Foreground(ColorMutedText)
 
-	logo := titleStyle.Render("⚡  कोश   K O S H A  ⚡") + "\n" + subStyle.Render("[ Encrypted Notes Vault ]")
+	logo := titleStyle.Render("⚡   K O S H A   ⚡") + "\n" + subStyle.Render("[ Encrypted Notes Vault ]")
 
 	errLine := ""
 	if m.errMsg != "" {
@@ -154,18 +154,16 @@ func (m PassphraseModel) View(width, height int) string {
 		fullScreen = append(fullScreen, bgStyle.Render(blankRow))
 	}
 
-	// 2. Box rows (padded on left and right to exact width)
+	// 2. Box rows (padded on left and right to exact width with explicit pitch black background)
 	for _, bLine := range boxLines {
 		bLen := lipgloss.Width(bLine)
 		rightPad := width - leftPad - bLen
 		if rightPad < 0 {
 			rightPad = 0
 		}
-		rowStr := strings.Repeat(" ", leftPad) + bLine + strings.Repeat(" ", rightPad)
-		if lipgloss.Width(rowStr) < width {
-			rowStr += strings.Repeat(" ", width-lipgloss.Width(rowStr))
-		}
-		fullScreen = append(fullScreen, bgStyle.Render(rowStr))
+		leftPadStr := bgStyle.Render(strings.Repeat(" ", leftPad))
+		rightPadStr := bgStyle.Render(strings.Repeat(" ", rightPad))
+		fullScreen = append(fullScreen, leftPadStr+bLine+rightPadStr)
 	}
 
 	// 3. Bottom padding rows down to exact height

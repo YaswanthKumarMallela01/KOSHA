@@ -157,3 +157,29 @@ func TestStripMarkup(t *testing.T) {
 		})
 	}
 }
+
+func TestURLParsingAndRendering(t *testing.T) {
+	input := "Check out https://github.com/YaswanthKumarMallela01/KOSHA for source code."
+	nodes := ParseInline(input)
+	
+	foundURL := false
+	for _, n := range nodes {
+		if n.Type == "url" && n.Content == "https://github.com/YaswanthKumarMallela01/KOSHA" {
+			foundURL = true
+		}
+	}
+	if !foundURL {
+		t.Fatalf("Expected URL node for https://github.com/YaswanthKumarMallela01/KOSHA, got: %+v", nodes)
+	}
+
+	html := RenderNodesToHTML(nodes)
+	if !strings.Contains(html, `<a href="https://github.com/YaswanthKumarMallela01/KOSHA"><u>https://github.com/YaswanthKumarMallela01/KOSHA</u></a>`) {
+		t.Errorf("Expected anchor tag in HTML, got: %s", html)
+	}
+
+	term := RenderToTerminal(input, 100, nil)
+	if !strings.Contains(term, "https://github.com/YaswanthKumarMallela01/KOSHA") {
+		t.Errorf("Expected URL in terminal rendering, got: %s", term)
+	}
+}
+

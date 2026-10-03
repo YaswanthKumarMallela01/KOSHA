@@ -99,10 +99,11 @@ func renderGlassPanel(content string, width, height int) string {
 			line = lines[i]
 		}
 		w := lipgloss.Width(line)
+		trailing := ""
 		if w < panelWidth {
-			line = line + strings.Repeat(" ", panelWidth-w)
+			trailing = bgStyle.Render(strings.Repeat(" ", panelWidth-w))
 		}
-		paddedLines = append(paddedLines, bgStyle.Render(line))
+		paddedLines = append(paddedLines, bgStyle.Render(line)+trailing)
 	}
 	return strings.Join(paddedLines, "\n")
 }

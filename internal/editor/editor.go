@@ -157,9 +157,17 @@ func (b *Buffer) InsertRune(r rune) {
 	}
 }
 
+func (b *Buffer) HasSelection() bool {
+	if !b.hasSelection {
+		return false
+	}
+	start, end := b.getSelectionRange()
+	return start.Line != end.Line || start.Col != end.Col
+}
+
 func (b *Buffer) InsertString(s string) {
 	b.pushUndo()
-	if b.hasSelection {
+	if b.HasSelection() {
 		b.DeleteSelection()
 	}
 	runes := []rune(s)
@@ -172,7 +180,7 @@ func (b *Buffer) InsertString(s string) {
 }
 
 func (b *Buffer) DeleteBack() {
-	if b.hasSelection {
+	if b.HasSelection() {
 		b.pushUndo()
 		b.DeleteSelection()
 		return
@@ -193,7 +201,7 @@ func (b *Buffer) DeleteBack() {
 }
 
 func (b *Buffer) DeleteForward() {
-	if b.hasSelection {
+	if b.HasSelection() {
 		b.pushUndo()
 		b.DeleteSelection()
 		return
@@ -218,7 +226,8 @@ func (b *Buffer) getSelectionRange() (Position, Position) {
 }
 
 func (b *Buffer) DeleteSelection() {
-	if !b.hasSelection {
+	if !b.HasSelection() {
+		b.ClearSelection()
 		return
 	}
 	start, end := b.getSelectionRange()
@@ -341,7 +350,7 @@ func (b *Buffer) ClearSelection() {
 }
 
 func (b *Buffer) SelectedText() string {
-	if !b.hasSelection {
+	if !b.HasSelection() {
 		return ""
 	}
 	start, end := b.getSelectionRange()
@@ -405,7 +414,7 @@ func (b *Buffer) SelectAll() {
 }
 
 func (b *Buffer) WrapOrUnwrapSelection(prefix, suffix string) {
-	if !b.hasSelection {
+	if !b.HasSelection() {
 		return
 	}
 	b.pushUndo()
@@ -651,90 +660,107 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		
-		if m.showFormatPane && len(msg.String()) == 1 && m.mode == EditMode {
-			k := msg.String()
+		// Direct global shortcut handlers for editor
+		switch strings.ToLower(msg.String()) {
+		case "ctrl+f":
+			m.showFormatPane = !m.showFormatPane
+			return m, tea.Batch(cmds...)
+		case "ctrl+r":
+			if m.mode == EditMode {
+				m.mode = PreviewMode
+			} else {
+				m.mode = EditMode
+			}
+			return m, tea.Batch(cmds...)
+		case "esc":
+			if m.showFormatPane {
+				m.showFormatPane = false
+				return m, tea.Batch(cmds...)
+			}
+			if m.buffer.HasSelection() {
+				m.buffer.ClearSelection()
+				return m, tea.Batch(cmds...)
+			}
+		}
+
+		if m.showFormatPane && m.mode == EditMode {
+			k := strings.ToLower(msg.String())
 			handled := true
 			switch k {
 			case "b":
-				if m.buffer.hasSelection {
+				if m.buffer.HasSelection() {
 					m.buffer.WrapOrUnwrapSelection("**", "**")
 				} else {
 					m.buffer.WrapOrUnwrapWord("**", "**")
 				}
 			case "i":
-				if m.buffer.hasSelection {
+				if m.buffer.HasSelection() {
 					m.buffer.WrapOrUnwrapSelection("*", "*")
 				} else {
 					m.buffer.WrapOrUnwrapWord("*", "*")
 				}
 			case "u":
-				if m.buffer.hasSelection {
+				if m.buffer.HasSelection() {
 					m.buffer.WrapOrUnwrapSelection("__", "__")
 				} else {
 					m.buffer.WrapOrUnwrapWord("__", "__")
 				}
 			case "s":
-				if m.buffer.hasSelection {
+				if m.buffer.HasSelection() {
 					m.buffer.WrapOrUnwrapSelection("~~", "~~")
 				} else {
 					m.buffer.WrapOrUnwrapWord("~~", "~~")
 				}
 			case "h":
-				if m.buffer.hasSelection {
+				if m.buffer.HasSelection() {
 					m.buffer.WrapOrUnwrapSelection("==", "==")
 				} else {
 					m.buffer.WrapOrUnwrapWord("==", "==")
 				}
-			case "H":
-				if m.buffer.hasSelection {
-					m.buffer.WrapOrUnwrapSelection("^^", "^^")
-				} else {
-					m.buffer.WrapOrUnwrapWord("^^", "^^")
-				}
 			case "1":
-				if m.buffer.hasSelection {
+				if m.buffer.HasSelection() {
 					m.buffer.WrapOrUnwrapSelection("# ", "")
 				} else {
 					m.buffer.InsertString("# ")
 				}
 			case "2":
-				if m.buffer.hasSelection {
+				if m.buffer.HasSelection() {
 					m.buffer.WrapOrUnwrapSelection("## ", "")
 				} else {
 					m.buffer.InsertString("## ")
 				}
 			case "3":
-				if m.buffer.hasSelection {
+				if m.buffer.HasSelection() {
 					m.buffer.WrapOrUnwrapSelection("### ", "")
 				} else {
 					m.buffer.InsertString("### ")
 				}
 			case "q":
-				if m.buffer.hasSelection {
+				if m.buffer.HasSelection() {
 					m.buffer.WrapOrUnwrapSelection("> ", "")
 				} else {
 					m.buffer.InsertString("> ")
 				}
 			case "m":
-				if m.buffer.hasSelection {
+				if m.buffer.HasSelection() {
 					m.buffer.WrapOrUnwrapSelection("`", "`")
 				} else {
 					m.buffer.WrapOrUnwrapWord("`", "`")
 				}
 			case "l":
-				if m.buffer.hasSelection {
+				if m.buffer.HasSelection() {
 					m.buffer.WrapOrUnwrapSelection(":::left\n", "")
 				} else {
 					m.buffer.InsertString("\n:::left\n")
 				}
 			case "c":
-				if m.buffer.hasSelection {
+				if m.buffer.HasSelection() {
 					m.buffer.WrapOrUnwrapSelection(":::center\n", "\n:::left")
 				} else {
 					m.buffer.InsertString("\n:::center\n")
 				}
 			case "r":
-				if m.buffer.hasSelection {
+				if m.buffer.HasSelection() {
 					m.buffer.WrapOrUnwrapSelection(":::right\n", "\n:::left")
 				} else {
 					m.buffer.InsertString("\n:::right\n")
@@ -742,7 +768,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "esc", "ctrl+f":
 				m.showFormatPane = false
 			default:
-				handled = false
+				if msg.String() == "H" {
+					if m.buffer.HasSelection() {
+						m.buffer.WrapOrUnwrapSelection("^^", "^^")
+					} else {
+						m.buffer.WrapOrUnwrapWord("^^", "^^")
+					}
+				} else {
+					handled = false
+				}
 			}
 			
 			if handled {
@@ -760,10 +794,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.mode = EditMode
 			}
+			return m, tea.Batch(cmds...)
 		case tea.KeyCtrlF:
 			m.showFormatPane = !m.showFormatPane
+			return m, tea.Batch(cmds...)
 		case tea.KeyEsc:
-			m.showFormatPane = false
+			if m.showFormatPane {
+				m.showFormatPane = false
+				return m, tea.Batch(cmds...)
+			}
+			if m.buffer.HasSelection() {
+				m.buffer.ClearSelection()
+				return m, tea.Batch(cmds...)
+			}
 		}
 
 		if m.mode == PreviewMode {
@@ -920,6 +963,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.markDirty()
 			}
 		case tea.KeyRunes, tea.KeySpace:
+			if strings.HasPrefix(strings.ToLower(msg.String()), "ctrl+") {
+				// Holding Ctrl or pressing Ctrl combinations MUST NEVER delete selection or insert control characters!
+				return m, tea.Batch(cmds...)
+			}
 			if msg.Alt {
 				// Alt bindings for formats
 				switch msg.String() {
@@ -942,8 +989,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.markDirty()
 				}
 			} else {
-				m.buffer.InsertString(msg.String())
-				m.markDirty()
+				if len(msg.Runes) > 0 && !unicode.IsControl(msg.Runes[0]) {
+					m.buffer.InsertString(string(msg.Runes))
+					m.markDirty()
+				} else if msg.Type == tea.KeySpace {
+					m.buffer.InsertRune(' ')
+					m.markDirty()
+				}
 			}
 		}
 
@@ -1023,6 +1075,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.buffer.cursorY = targetLine
 				m.buffer.cursorX = targetCol
 				m.buffer.UpdateSelection()
+			} else if msg.Action == tea.MouseActionRelease {
+				if !m.buffer.HasSelection() {
+					m.buffer.ClearSelection()
+				}
 			}
 		}
 	}

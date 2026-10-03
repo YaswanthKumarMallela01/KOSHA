@@ -219,7 +219,7 @@ func parseInline(text string) []*Node {
 
 		// Text
 		end := i + 1
-		for end < length && runes[end] != '\\' && runes[end] != '*' && runes[end] != '_' && runes[end] != '~' && runes[end] != '=' && runes[end] != '^' && runes[end] != '[' && runes[end] != '`' && runes[end] != '#' {
+		for end < length && runes[end] != '\\' && runes[end] != '*' && runes[end] != '_' && runes[end] != '~' && runes[end] != '=' && runes[end] != '^' && runes[end] != '[' && runes[end] != '`' && runes[end] != '#' && !isURLStart(runes, end) {
 			end++
 		}
 		nodes = append(nodes, &Node{Type: "text", Content: string(runes[i:end])})
@@ -227,6 +227,20 @@ func parseInline(text string) []*Node {
 	}
 
 	return nodes
+}
+
+func isURLStart(runes []rune, idx int) bool {
+	l := len(runes)
+	if idx+7 <= l && strings.ToLower(string(runes[idx:idx+7])) == "http://" {
+		return true
+	}
+	if idx+8 <= l && strings.ToLower(string(runes[idx:idx+8])) == "https://" {
+		return true
+	}
+	if idx+4 <= l && strings.ToLower(string(runes[idx:idx+4])) == "www." {
+		return true
+	}
+	return false
 }
 
 func findEnd(runes []rune, start int, marker string) int {
@@ -573,7 +587,14 @@ func RenderNodesToHTML(nodes []*Node) string {
 		case "link":
 			sb.WriteString("<u>" + htmlEscapeText(n.Content) + "</u>")
 		case "url":
-			sb.WriteString(fmt.Sprintf(`<a href="%s"><u>%s</u></a>`, htmlEscapeText(n.Content), htmlEscapeText(n.Content)))
+			if strings.Contains(n.Content, " (") && strings.HasSuffix(n.Content, ")") {
+				idx := strings.LastIndex(n.Content, " (")
+				anchor := n.Content[:idx]
+				linkURL := n.Content[idx+2 : len(n.Content)-1]
+				sb.WriteString(fmt.Sprintf(`<a href="%s"><u>%s</u></a>`, htmlEscapeText(linkURL), htmlEscapeText(anchor)))
+			} else {
+				sb.WriteString(fmt.Sprintf(`<a href="%s"><u>%s</u></a>`, htmlEscapeText(n.Content), htmlEscapeText(n.Content)))
+			}
 		case "tag":
 			sb.WriteString("<b>#" + htmlEscapeText(n.Content) + "</b>")
 		}

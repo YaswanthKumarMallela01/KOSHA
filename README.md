@@ -107,7 +107,8 @@ Inside the editor, press **`Ctrl+G`** to automatically copy-edit spelling, gramm
 ## 🖼️ Image Support & Rich Formatting
 
 - **Embedded Images**: Insert images using the syntax `!img[caption](filepath|align|width%)` (e.g. `!img[Diagram](arch.png|center|80%)`). Supports `left`, `center`, and `right` alignments with custom percentage sizing. Rendered neatly with framed symbol placeholders in terminal read mode and included in exports.
-- **Electric Blue Links**: Pasted URLs (`https://...`, `http://...`, `www....`), wiki links (`[[...]]`), and Markdown links (`[text](url)`) automatically turn vibrant blue (`#38BDF8`) with underline in both edit and read modes.
+- **Electric Blue Links**: Pasted URLs (`https://...`, `http://...`, `www....`), wiki links (`[[...]]`), and Markdown links (`[text](url)`) automatically turn vibrant blue (`#38BDF8`) with underline in both edit mode, read mode, PDF export, and Word export.
+- **Robust Multi-line Text Selection**: Select multiple lines or words using `Shift+Arrows`, `Ctrl+A`, or mouse drag. Pressing `Ctrl+F` keeps selection intact and lets you apply bold, italics, highlights, quotes, and alignments across the entire selection.
 - **High-Visibility Typography**: Clean, high-contrast formatting (pure white bold, soft lavender italic, saffron highlights, gold underlines, and distinct code blocks) that stands out clearly against the pitch-black backdrop.
 - **Passphrase-Protected Export**: Export full books, chapters, or individual notes to standard **Markdown**, professional **PDF**, or Microsoft **Word (.docx)** with identical alignment and formatting preserved. All exports require master passphrase authentication.
 
@@ -123,7 +124,7 @@ Inside the editor, press **`Ctrl+G`** to automatically copy-edit spelling, gramm
 | `echo "idea" \| kosha add` | Pipe text from stdin directly into quick capture |
 | `kosha search "query"` | Launch directly into search mode with prefilled query |
 | `kosha export <book> [--format pdf\|word\|md] [--out <dir>]` | Export book notes to PDF, Word, or Markdown |
-| `kosha version` | Print version (v0.3.1) |
+| `kosha version` | Print version (v0.3.2) |
 | `kosha help` | Show command reference |
 
 ---
