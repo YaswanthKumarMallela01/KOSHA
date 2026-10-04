@@ -6,7 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func TestSelectionPreservedOnCtrlF(t *testing.T) {
+func TestSelectionPreservedOnShiftF(t *testing.T) {
 	ed := New("First line of notes\nSecond line of notes\nThird line of notes", nil)
 	ed.Focus()
 
@@ -20,18 +20,35 @@ func TestSelectionPreservedOnCtrlF(t *testing.T) {
 		t.Fatalf("Unexpected selected text: %q", selected)
 	}
 
-	// Press Ctrl+F
-	m, _ := ed.Update(tea.KeyMsg{Type: tea.KeyCtrlF})
+	// Press Shift+F (represented as 'F' in standard terminals or "shift+f")
+	m, _ := ed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'F'}})
 	edModel := m.(Model)
 
 	if !edModel.showFormatPane {
-		t.Error("Expected format pane to open on Ctrl+F")
+		t.Error("Expected format pane to open on Shift+F ('F')")
 	}
 	if !edModel.buffer.HasSelection() {
-		t.Error("Expected selection to remain intact after pressing Ctrl+F")
+		t.Error("Expected selection to remain intact after pressing Shift+F")
 	}
 	if edModel.buffer.SelectedText() != selected {
-		t.Errorf("Selected text was corrupted by Ctrl+F: %q", edModel.buffer.SelectedText())
+		t.Errorf("Selected text was corrupted by Shift+F: %q", edModel.buffer.SelectedText())
+	}
+
+	// Close format pane with Shift+F again
+	mClose, _ := edModel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	edModel = mClose.(Model)
+	if edModel.showFormatPane {
+		t.Error("Expected format pane to close when toggled with 'f'")
+	}
+	if !edModel.buffer.HasSelection() {
+		t.Error("Expected selection to remain intact after closing format pane")
+	}
+
+	// Open format pane with "shift+f" string
+	mOpen2, _ := edModel.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune("shift+f")}))
+	edModel = mOpen2.(Model)
+	if !edModel.showFormatPane {
+		t.Error("Expected format pane to open on 'shift+f'")
 	}
 
 	// Press 'b' to bold the entire selection
@@ -45,6 +62,31 @@ func TestSelectionPreservedOnCtrlF(t *testing.T) {
 	expected := "**First line of notes**\n**Second line of notes**\n**Third line of notes**"
 	if content != expected {
 		t.Errorf("Expected formatted content:\n%q\nGot:\n%q", expected, content)
+	}
+}
+
+func TestCtrlFReservedAndPreservesSelection(t *testing.T) {
+	orig := "Important code to preserve"
+	ed := New(orig, nil)
+	ed.Focus()
+
+	ed.buffer.SelectAll()
+	if !ed.buffer.HasSelection() {
+		t.Fatal("Expected buffer to have selection")
+	}
+
+	// Press Ctrl+F - should NOT open format pane and MUST NOT delete selection
+	m, _ := ed.Update(tea.KeyMsg{Type: tea.KeyCtrlF})
+	edModel := m.(Model)
+
+	if edModel.showFormatPane {
+		t.Error("Expected format pane to NOT open on Ctrl+F (reserved for search)")
+	}
+	if !edModel.buffer.HasSelection() {
+		t.Error("Expected selection to remain intact after pressing Ctrl+F")
+	}
+	if edModel.Content() != orig {
+		t.Errorf("Content was modified by Ctrl+F: %q", edModel.Content())
 	}
 }
 
@@ -140,7 +182,8 @@ func TestWantsImageTrigger(t *testing.T) {
 	_ = m2
 
 	// Format pane 'p' triggers wantsImage
-	mPane, _ := ed.Update(tea.KeyMsg{Type: tea.KeyCtrlF})
+	ed.buffer.SelectAll()
+	mPane, _ := ed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'F'}})
 	edPane := mPane.(Model)
 	if !edPane.IsFormatPaneOpen() {
 		t.Fatal("Expected format pane to be open")

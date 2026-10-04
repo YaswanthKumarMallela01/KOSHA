@@ -93,9 +93,10 @@ Inside the editor, press **`Ctrl+G`** to automatically copy-edit spelling, gramm
 - **`Shift + ↑ / ↓ / ← / →`**: Select multiple lines or characters with cursor
 - **Mouse Click & Drag**: Highlight and select text across multiple lines with mouse/trackpad
 - **`Ctrl+A`**: Select entire note across all lines
-- **`Ctrl+F`**: Open formatting toolbar (applies bold, italic, underline, strike, highlights, quotes, headings, and images across entire selection)
+- **`Shift+F`**: Open formatting toolbar (applies bold, italic, underline, strike, highlights, quotes, headings, and images across entire selection)
 - **`Alt+B / Alt+I / Alt+U / Alt+S`**: Instant inline formatting for single words or multi-line selections
-- **`Alt+I` / `Ctrl+I` / `Ctrl+F` ➜ `p` (in Editor)**: Insert embedded image `!img[alt](path|align|width%)` with alignment & sizing
+- **`Alt+I` / `Ctrl+I` / `Shift+F` ➜ `p` (in Editor)**: Insert embedded image `!img[alt](path|align|width%)` with alignment & sizing
+- **`Ctrl+F`**: Reserved for Find/Search functionality in the future (safe and preserves selection)
 - **`Ctrl+Z / Ctrl+Y`**: Instant undo/redo with atomic history for multi-line formatting and text changes
 - **`Ctrl+P` (in Read/Edit Mode)**: Export note to styled **PDF** (passphrase-protected)
 - **`Ctrl+W` (in Read/Edit Mode)**: Export note to Microsoft **Word (.docx)** (passphrase-protected)
@@ -109,7 +110,7 @@ Inside the editor, press **`Ctrl+G`** to automatically copy-edit spelling, gramm
 
 - **Embedded Images**: Insert images using the syntax `!img[caption](filepath|align|width%)` (e.g. `!img[Diagram](arch.png|center|80%)`). Supports `left`, `center`, and `right` alignments with custom percentage sizing. Rendered neatly with framed symbol placeholders in terminal read mode and included in exports.
 - **Electric Blue Links**: Pasted URLs (`https://...`, `http://...`, `www....`), wiki links (`[[...]]`), and Markdown links (`[text](url)`) automatically turn vibrant blue (`#38BDF8`) with underline in both edit mode, read mode, PDF export, and Word export.
-- **Robust Multi-line Text Selection**: Select multiple lines or words using `Shift+Arrows`, `Ctrl+A`, or mouse drag. Pressing `Ctrl+F` keeps selection intact and lets you apply bold, italics, highlights, quotes, and alignments across the entire selection.
+- **Robust Multi-line Text Selection**: Select multiple lines or words using `Shift+Arrows`, `Ctrl+A`, or mouse drag. Pressing `Shift+F` keeps selection intact and lets you apply bold, italics, highlights, quotes, and alignments across the entire selection.
 - **High-Visibility Typography**: Clean, high-contrast formatting (pure white bold, soft lavender italic, saffron highlights, gold underlines, and distinct code blocks) that stands out clearly against the pitch-black backdrop.
 - **Passphrase-Protected Export**: Export full books, chapters, or individual notes to standard **Markdown**, professional **PDF**, or Microsoft **Word (.docx)** with identical alignment and formatting preserved. All exports require master passphrase authentication.
 

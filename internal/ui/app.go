@@ -329,6 +329,9 @@ func (a *App) updateEditor(msg tea.Msg) tea.Cmd {
 				a.statusMsg = "Chapter snapshot saved"
 			}
 			return nil
+		case "ctrl+f":
+			a.statusMsg = "Find / Search (coming soon)"
+			return nil
 		case "alt+i", "ctrl+i":
 			// Image insertion - open input overlay to get image path
 			a.inputOverlay.Open("Insert image — enter file path:", "", "insert_image", "")
@@ -1018,7 +1021,8 @@ func (a *App) getFooterHints() []KeyHint {
 	case ScreenNoteEdit:
 		return []KeyHint{
 			{Key: "Ctrl+R", Description: "Read Mode"},
-			{Key: "Ctrl+F", Description: "Format"},
+			{Key: "Shift+F", Description: "Format"},
+			{Key: "Ctrl+F", Description: "Find"},
 			{Key: "Ctrl+G", Description: "AI Refine"},
 			{Key: "Ctrl+I", Description: "Image"},
 			{Key: "Ctrl+P", Description: "PDF"},

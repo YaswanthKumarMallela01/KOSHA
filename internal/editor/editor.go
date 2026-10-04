@@ -736,8 +736,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Direct global shortcut handlers for editor
 		strLower := strings.ToLower(msg.String())
 		switch strLower {
+		case "shift+f":
+			if m.mode == EditMode {
+				m.showFormatPane = !m.showFormatPane
+			}
+			return m, tea.Batch(cmds...)
 		case "ctrl+f":
-			m.showFormatPane = !m.showFormatPane
+			// Reserved for Find/Search functionality in the future (preserves selection & content)
 			return m, tea.Batch(cmds...)
 		case "ctrl+r":
 			if m.mode == EditMode {
@@ -807,6 +812,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		case "ctrl", "alt", "shift":
 			// Solitary modifier key press: NEVER touch selection or buffer!
+			return m, tea.Batch(cmds...)
+		}
+
+		if msg.String() == "F" && m.buffer.HasSelection() && m.mode == EditMode {
+			m.showFormatPane = !m.showFormatPane
 			return m, tea.Batch(cmds...)
 		}
 
@@ -896,7 +906,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					m.buffer.InsertString("\n:::right\n")
 				}
-			case "esc", "ctrl+f":
+			case "esc", "shift+f", "f":
 				m.showFormatPane = false
 			default:
 				if msg.String() == "H" {
@@ -933,7 +943,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Batch(cmds...)
 		case tea.KeyCtrlF:
-			m.showFormatPane = !m.showFormatPane
+			// Reserved for Find/Search functionality in the future (preserves selection & content)
 			return m, tea.Batch(cmds...)
 		case tea.KeyEsc:
 			if m.showFormatPane {

@@ -329,7 +329,8 @@ func renderHelpOverlay(width, height int) string {
     Ctrl+Z / Ctrl+Y  Undo / Redo
     Ctrl+C / X / V   Copy / Cut / Paste
     Ctrl+R           Toggle Edit mode / Preview mode
-    Ctrl+F           Toggle format panel
+    Shift+F          Toggle format panel
+    Ctrl+F           Find / Search (reserved)
     Ctrl+G           Run Gemini AI grammar & highlight refine
     Ctrl+S           Save snapshot of current vault
     Esc              Save note and exit editor
